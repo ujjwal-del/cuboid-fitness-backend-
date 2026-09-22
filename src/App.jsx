@@ -2307,34 +2307,26 @@ useEffect(() => {
       {/* Sidebar */}
       <Drawer variant="permanent" sx={{width:drawerWidth,flexShrink:0,"& .MuiDrawer-paper":{width:drawerWidth,boxSizing:"border-box",bgcolor:"#070b14",color:"#fff",borderRight:"1px solid #182235",overflow:"hidden"}}}>
         <Toolbar sx={{minHeight:"72px!important",px:2.2}}>
-          <Box sx={{display:"flex",alignItems:"center",gap:1.2}}>
-            <Box sx={{width:40,height:40,borderRadius:2,border:"1px solid #8b5cf6",display:"grid",placeItems:"center",background:"linear-gradient(145deg,#1b1235,#0a0a0a)",boxShadow:"0 0 24px rgba(139,92,246,.25)",animation:"cuboidGlow 3s ease-in-out infinite"}}><Box sx={{width:17,height:17,border:"2px solid #a78bfa",transform:"rotate(45deg)"}}/></Box>
-            <Box><Typography
-                sx={{
-                  fontWeight: 1000,
-                  fontSize: 18,
-                  letterSpacing: 2.6,
-                  lineHeight: 1,
-                  color: "#ffffff",
-                  textShadow: "0 0 18px rgba(139,92,246,.35)",
-                  animation: "cuboidBrandAdmin 3.5s ease-in-out infinite",
-                }}
-              >
-                CUBOID
-              </Typography>
-              <Typography
-                sx={{
-                  mt: .4,
-                  fontSize: 9,
-                  letterSpacing: 4,
-                  color: "#a78bfa",
-                  fontWeight: 950,
-                  textShadow: "0 0 14px rgba(34,211,238,.26)",
-                }}
-              >
-                FITNESS
-              </Typography></Box>
-          </Box>
+          <Box
+  sx={{
+    display: "flex",
+    alignItems: "center",
+    width: "100%",
+  }}
+>
+  <Box
+    component="img"
+    src="/cuboid-logo.jpeg"
+    alt="Cuboid Fitness"
+    sx={{
+      width: 175,
+      height: 55,
+      objectFit: "contain",
+      objectPosition: "left center",
+      display: "block",
+    }}
+  />
+</Box>
         </Toolbar>
         <List sx={{px:1.2,pt:1}}>
           <SidebarItem icon={<DashboardIcon/>} text="Dashboard" active={page==="Dashboard"} onClick={()=>setPage("Dashboard")} />
@@ -2884,7 +2876,7 @@ useEffect(() => {
           EDIT MEMBER DIALOG
       =================================================== */}
       <Dialog open={openEditMember} onClose={() => !savingEditMember && setOpenEditMember(false)} fullWidth maxWidth="md"
-        PaperProps={{sx:{bgcolor:"#0b0b0b",color:"#f5f5f5",border:"1px solid rgba(129,92,246,.35)",borderRadius:4}}}>
+        PaperProps={{sx:{bgcolor:"#ffffff",color:"#f5f5f5",border:"1px solid rgba(129,92,246,.35)",borderRadius:4}}}>
         <DialogTitle sx={{color:"#fff",borderBottom:"1px solid #1f2a3a"}}>
           <Typography sx={{fontWeight:950,fontSize:20}}>Edit Member Details</Typography>
           <Typography sx={{color:"#94a3b8",fontSize:12,mt:.5}}>Member ID, Gym ID and Fingerprint ID use the same value.</Typography>
@@ -2904,7 +2896,81 @@ useEffect(() => {
              <Grid item xs={12} md={4}><TextField select fullWidth label="Payment Status" value={editMemberForm.paymentStatus} onChange={(e)=>updateEditMemberForm("paymentStatus",e.target.value)}><MuiMenuItem value="Paid">Paid</MuiMenuItem><MuiMenuItem value="Pending">Pending</MuiMenuItem></TextField></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth type="date" label="Payment Date" InputLabelProps={{shrink:true}} value={editMemberForm.paymentDate} onChange={(e)=>updateEditMemberForm("paymentDate",e.target.value)}/></Grid>
             <Grid item xs={12} md={4}><TextField select fullWidth label="Status" value={editMemberForm.status} onChange={(e)=>updateEditMemberForm("status",e.target.value)}><MuiMenuItem value="Active">Active</MuiMenuItem><MuiMenuItem value="Pending">Pending</MuiMenuItem><MuiMenuItem value="Expired">Expired</MuiMenuItem></TextField></Grid>
-            <Grid item xs={12} md={6}><TextField select fullWidth label="Fingerprint Access" value={editMemberForm.fingerprintAccess} onChange={(e)=>updateEditMemberForm("fingerprintAccess",e.target.value)}><MuiMenuItem value="Enabled">Enabled</MuiMenuItem><MuiMenuItem value="Disabled">Disabled</MuiMenuItem></TextField></Grid>
+            <Grid item xs={12} md={6}>
+  <TextField
+    select
+    fullWidth
+    label="Fingerprint Access"
+    value={editMemberForm.fingerprintAccess}
+    onChange={(e) =>
+      updateEditMemberForm("fingerprintAccess", e.target.value)
+    }
+    sx={{
+      "& .MuiInputBase-root": {
+        backgroundColor: "#0a101c",
+      },
+      "& .MuiSelect-select": {
+        color:
+          editMemberForm.fingerprintAccess === "Enabled"
+            ? "#22c55e"
+            : "#ef4444",
+        fontWeight: 900,
+      },
+      "& .MuiInputLabel-root": {
+        color: "#ffffff",
+      },
+      "& .MuiInputLabel-root.Mui-focused": {
+        color: "#FFD000",
+      },
+      "& .MuiOutlinedInput-notchedOutline": {
+        borderColor:
+          editMemberForm.fingerprintAccess === "Enabled"
+            ? "#22c55e"
+            : "#ef4444",
+      },
+      "&:hover .MuiOutlinedInput-notchedOutline": {
+        borderColor: "#FFD000",
+      },
+      "& .MuiSelect-icon": {
+        color: "#ffffff !important",
+      },
+    }}
+  >
+    <MuiMenuItem
+      value="Enabled"
+      sx={{
+        color: "#22c55e",
+        fontWeight: 900,
+        backgroundColor: "#07140d",
+        "&:hover": {
+          backgroundColor: "#0d2b18",
+        },
+        "&.Mui-selected": {
+          backgroundColor: "#123d21",
+        },
+      }}
+    >
+      ● Enabled
+    </MuiMenuItem>
+
+    <MuiMenuItem
+      value="Disabled"
+      sx={{
+        color: "#ef4444",
+        fontWeight: 900,
+        backgroundColor: "#170909",
+        "&:hover": {
+          backgroundColor: "#321010",
+        },
+        "&.Mui-selected": {
+          backgroundColor: "#461515",
+        },
+      }}
+    >
+      ● Disabled
+    </MuiMenuItem>
+  </TextField>
+</Grid>
             <Grid item xs={12} md={6}><FormControlLabel control={<Checkbox checked={editMemberForm.paymentCompleted} onChange={(e)=>updateEditMemberForm("paymentCompleted",e.target.checked)}/>} label="Payment completed"/></Grid>
           </Grid>
         </DialogContent>
@@ -4889,4 +4955,4 @@ function RegistrationApprovals({
   );
 }
 
-export default App;  
+export default App;   
