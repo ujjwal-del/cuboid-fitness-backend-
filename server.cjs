@@ -1,9 +1,23 @@
+﻿require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const XLSX = require("xlsx");
+const { createClient } = require("@supabase/supabase-js");
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SECRET_KEY,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  }
+);
 
 const app = express();
 const PORT = 3001;
@@ -152,7 +166,7 @@ function requireAuth(
 
 app.post(
   "/api/login",
-  (req, res) => {
+  async (req, res) => {
     try {
       const {
         adminId,
@@ -248,7 +262,7 @@ app.post(
 app.get(
   "/api/auth/check",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     res.json({
       success: true,
       authenticated: true,
@@ -263,7 +277,7 @@ app.get(
 app.post(
   "/api/logout",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     sessions.delete(
       req.authToken
     );
@@ -345,85 +359,200 @@ function normalizeMember(row) {
    READ MEMBERS
 ========================================================= */
 
-function readMembers() {
-  const file =
-    getExcelPath();
 
-  if (!fs.existsSync(file)) {
-    return [];
-  }
+function memberToDb(member) {
+  return {
+    id: String(member.id || "").trim(),
+    member_id: String(member.memberId || member.id || "").trim(),
+    customer_id: String(member.customerId || "").trim(),
+    gym_id: String(member.gymId || "").trim(),
+    fingerprint_id: String(member.fingerprintId || "").trim(),
+    name: member.name ?? "",
+    phone: member.phone ?? "",
+    plan: member.plan ?? "",
+    joining_date: member.joiningDate || null,
+expiry_date: member.expiryDate || null,
+    plan_fee: Number(member.planFee) || 0,
+    fee_received: Number(member.feeReceived) || 0,
+    payment_method: member.paymentMethod ?? "",
+    payment_status: member.paymentStatus ?? "",
+    payment_completed: Boolean(member.paymentCompleted),
+    payment_amount: Number(member.paymentAmount) || 0,
+    transaction_id: member.transactionId ?? "",
+    payment_date: member.paymentDate || null,
+    status: member.status ?? "",
+    fingerprint_access: Boolean(member.fingerprintAccess),
+    photo: member.photo ?? ""
+  };
+}
 
-  const workbook =
-    XLSX.readFile(file);
+function dbToMember(row) {
+  return normalizeMember({
+    id: row.id,
+    memberId: row.member_id,
+    customerId: row.customer_id,
+    gymId: row.gym_id,
+    fingerprintId: row.fingerprint_id,
+    name: row.name,
+    phone: row.phone,
+    plan: row.plan,
+    joiningDate: row.joining_date,
+    expiryDate: row.expiry_date,
+    planFee: row.plan_fee,
+    feeReceived: row.fee_received,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
+    paymentCompleted: row.payment_completed,
+    paymentAmount: row.payment_amount,
+    transactionId: row.transaction_id,
+    paymentDate: row.payment_date,
+    status: row.status,
+    fingerprintAccess: row.fingerprint_access,
+    photo: row.photo
+  });
+}
 
-  const sheetName =
-    workbook.SheetNames[0];
+function registrationRequestToDb(request) {
+  return {
+    request_id: String(request.requestId || "").trim(),
+    member_id: String(request.memberId || "").trim(),
+    customer_id: String(request.customerId || "").trim(),
+    gym_id: String(request.gymId || "").trim(),
+    fingerprint_id: String(request.fingerprintId || "").trim(),
+    name: request.name ?? "",
+    phone: request.phone ?? "",
+    plan: request.plan ?? "",
+    joining_date: request.joiningDate ?? "",
+    photo: request.photo ?? "",
+    payment_completed: Boolean(request.paymentCompleted),
+    payment_status: request.paymentStatus ?? "",
+    payment_method: request.paymentMethod ?? "",
+    payment_amount: Number(request.paymentAmount) || 0,
+    transaction_id: request.transactionId ?? "",
+    payment_date: request.paymentDate ?? "",
+    status: request.status ?? "",
+    created_at: request.createdAt || null,
+    reviewed_at: request.reviewedAt || null
+  };
+}
 
-  if (!sheetName) {
-    return [];
-  }
+function dbToRegistrationRequest(row) {
+  return normalizeRegistrationRequest({
+    requestId: row.request_id,
+    memberId: row.member_id,
+    customerId: row.customer_id,
+    gymId: row.gym_id,
+    fingerprintId: row.fingerprint_id,
+    name: row.name,
+    phone: row.phone,
+    plan: row.plan,
+    joiningDate: row.joining_date,
+    photo: row.photo,
+    paymentCompleted: row.payment_completed,
+    paymentStatus: row.payment_status,
+    paymentMethod: row.payment_method,
+    paymentAmount: row.payment_amount,
+    transactionId: row.transaction_id,
+    paymentDate: row.payment_date,
+    status: row.status,
+    createdAt: row.created_at,
+    reviewedAt: row.reviewed_at
+  });
+}
 
-  const sheet =
-    workbook.Sheets[
-      sheetName
-    ];
+function expiredMemberToDb(member) {
+  const base = memberToDb(member);
+  return {
+    ...base,
+    expired_at: member.expiredAt || null,
+    expiration_reason: member.expirationReason || ""
+  };
+}
 
-  const rows =
-    XLSX.utils.sheet_to_json(
-      sheet,
-      {
-        defval: "",
-      }
-    );
+function dbToExpiredMember(row) {
+  return {
+    ...dbToMember(row),
+    expiredAt: row.expired_at,
+    expirationReason: row.expiration_reason
+  };
+}
 
-  return rows.map(
-    normalizeMember
-  );
+function writeMembersExcelBackup(members) {
+  const rows = members.map(member => {
+    const row = {};
+    for (const key of HEADERS) row[key] = member[key] ?? "";
+    return row;
+  });
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.json_to_sheet(rows, { header: HEADERS });
+  XLSX.utils.book_append_sheet(workbook, sheet, "Members");
+  XLSX.writeFile(workbook, getExcelPath());
+}
+
+function writeExpiredMembersExcelBackup(members) {
+  const rows = members.map(member => {
+    const row = {};
+    for (const key of EXPIRED_MEMBER_HEADERS) row[key] = member[key] ?? "";
+    return row;
+  });
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.json_to_sheet(rows, { header: EXPIRED_MEMBER_HEADERS });
+  XLSX.utils.book_append_sheet(workbook, sheet, "Expired Members");
+  XLSX.writeFile(workbook, getExpiredMembersPath());
+}
+
+function writeRegistrationRequestsExcelBackup(requests) {
+  const rows = requests.map(request => {
+    const row = {};
+    for (const key of REGISTRATION_REQUEST_HEADERS) row[key] = request[key] ?? "";
+    return row;
+  });
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.json_to_sheet(rows, { header: REGISTRATION_REQUEST_HEADERS });
+  XLSX.utils.book_append_sheet(workbook, sheet, "Registration Requests");
+  XLSX.writeFile(workbook, getRegistrationRequestsPath());
+}
+
+async function readMembers() {
+  const { data, error } = await supabase
+    .from("members")
+    .select("*")
+    .order("id", { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map(dbToMember);
 }
 
 /* =========================================================
    WRITE MEMBERS
 ========================================================= */
 
-function writeMembers(
-  members
-) {
-  const file =
-    getExcelPath();
+async function writeMembers(members) {
+  const normalized = (members || []).map(normalizeMember);
+  const { data: existing, error: readError } = await supabase
+    .from("members")
+    .select("id");
+  if (readError) throw readError;
 
-  const rows =
-    members.map((member) => {
-      const row = {};
+  const incomingIds = new Set(normalized.map(m => String(m.id || "").trim()).filter(Boolean));
 
-      for (const key of HEADERS) {
-        row[key] =
-          member[key] ?? "";
-      }
+  for (const row of existing || []) {
+    const id = String(row.id || "").trim();
+    if (id && !incomingIds.has(id)) {
+      const { error } = await supabase.from("members").delete().eq("id", id);
+      if (error) throw error;
+    }
+  }
 
-      return row;
-    });
+  if (normalized.length) {
+    const { error } = await supabase
+      .from("members")
+      .upsert(normalized.map(memberToDb), { onConflict: "id" });
+    if (error) throw error;
+  }
 
-  const workbook =
-    XLSX.utils.book_new();
-
-  const sheet =
-    XLSX.utils.json_to_sheet(
-      rows,
-      {
-        header: HEADERS,
-      }
-    );
-
-  XLSX.utils.book_append_sheet(
-    workbook,
-    sheet,
-    "Members"
-  );
-
-  XLSX.writeFile(
-    workbook,
-    file
-  );
+  writeMembersExcelBackup(normalized);
 }
 
 /* =========================================================
@@ -432,37 +561,34 @@ function writeMembers(
 
 function getNextMemberId(members, requests = []) {
   /*
-    IDs are reusable membership slots.
+    Permanent sequential member IDs.
 
-    Rule:
-    - Active members reserve their IDs.
-    - Pending requests do NOT get a permanent member ID.
-    - Expired members are archived and their old ID becomes available.
-    - The lowest available numeric ID starting at 325 is assigned.
+    Existing members:
+      1, 2, 3, ... 382
+
+    New members:
+      383, 384, 385, ...
+
+    Existing IDs are NEVER reused.
   */
-  const usedIds = new Set();
+
+  let maxId = 0;
 
   for (const member of members) {
-    const id = String(member.id || member.memberId || "").trim();
+    const id = String(
+      member.id || member.memberId || ""
+    ).trim();
+
     if (/^\d+$/.test(id)) {
       const number = Number(id);
-      if (Number.isInteger(number) && number >= 325) {
-        usedIds.add(number);
+
+      if (Number.isFinite(number) && number > maxId) {
+        maxId = number;
       }
     }
   }
 
-  for (const request of requests) {
-    const status = String(request.status || "").trim().toLowerCase();
-    if (status !== "pending") continue;
-
-    // Pending registrations intentionally do not reserve a member ID.
-    // They receive an ID only when approved.
-  }
-
-  let nextNumber = 325;
-  while (usedIds.has(nextNumber)) nextNumber += 1;
-  return String(nextNumber);
+  return String(maxId + 1);
 }
 
 /* =========================================================
@@ -479,54 +605,38 @@ const EXPIRED_MEMBER_HEADERS = [
   "expirationReason",
 ];
 
-function readExpiredMembers() {
-  const file = getExpiredMembersPath();
+async function readExpiredMembers() {
+  const { data, error } = await supabase
+    .from("expired_members")
+    .select("*")
+    .order("expired_at", { ascending: false });
 
-  if (!fs.existsSync(file)) {
-    return [];
-  }
-
-  const workbook = XLSX.readFile(file);
-  const sheetName = workbook.SheetNames[0];
-
-  if (!sheetName) {
-    return [];
-  }
-
-  return XLSX.utils.sheet_to_json(
-    workbook.Sheets[sheetName],
-    { defval: "" }
-  );
+  if (error) throw error;
+  return (data || []).map(dbToExpiredMember);
 }
 
-function writeExpiredMembers(members) {
-  const rows = members.map((member) => {
-    const row = {};
+async function writeExpiredMembers(members) {
+  const { data: existing, error: readError } = await supabase
+    .from("expired_members")
+    .select("archive_id");
+  if (readError) throw readError;
 
-    for (const key of EXPIRED_MEMBER_HEADERS) {
-      row[key] = member[key] ?? "";
-    }
+  for (const row of existing || []) {
+    const { error } = await supabase
+      .from("expired_members")
+      .delete()
+      .eq("archive_id", row.archive_id);
+    if (error) throw error;
+  }
 
-    return row;
-  });
+  if (members && members.length) {
+    const { error } = await supabase
+      .from("expired_members")
+      .insert(members.map(expiredMemberToDb));
+    if (error) throw error;
+  }
 
-  const workbook = XLSX.utils.book_new();
-
-  const sheet = XLSX.utils.json_to_sheet(
-    rows,
-    { header: EXPIRED_MEMBER_HEADERS }
-  );
-
-  XLSX.utils.book_append_sheet(
-    workbook,
-    sheet,
-    "Expired Members"
-  );
-
-  XLSX.writeFile(
-    workbook,
-    getExpiredMembersPath()
-  );
+  writeExpiredMembersExcelBackup(members || []);
 }
 
 /*
@@ -607,22 +717,20 @@ function getExpiryDateFromPlan(joiningDate, plan) {
   so the database state is actually changed even when nobody
   has the admin dashboard open.
 */
-function expireAndReleaseMemberIds() {
+async function expireAndReleaseMemberIds() {
   try {
-    const members = readMembers();
+    const members = await readMembers();
 
     if (!members.length) {
       return {
         expiredCount: 0,
-        releasedIds: [],
       };
     }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const todayString =
-      today.toISOString().split("T")[0];
+    const todayString = today.toISOString().split("T")[0];
 
     const activeMembers = [];
     const newlyExpired = [];
@@ -650,6 +758,7 @@ function expireAndReleaseMemberIds() {
       newlyExpired.push({
         ...member,
         status: "Expired",
+        fingerprintAccess: false,
         expiredAt: todayString,
         expirationReason:
           "Automatically expired after the membership plan duration",
@@ -659,22 +768,19 @@ function expireAndReleaseMemberIds() {
     if (!newlyExpired.length) {
       return {
         expiredCount: 0,
-        releasedIds: [],
       };
     }
 
-    const archive =
-      readExpiredMembers();
+    const archive = await readExpiredMembers();
 
-    const archiveKeys =
-      new Set(
-        archive.map((member) =>
-          [
-            String(member.id || member.memberId || "").trim(),
-            String(member.expiredAt || "").trim(),
-          ].join("|")
-        )
-      );
+    const archiveKeys = new Set(
+      archive.map((member) =>
+        [
+          String(member.id || member.memberId || "").trim(),
+          String(member.expiredAt || "").trim(),
+        ].join("|")
+      )
+    );
 
     for (const member of newlyExpired) {
       const key = [
@@ -687,25 +793,28 @@ function expireAndReleaseMemberIds() {
       }
     }
 
-    writeExpiredMembers(archive);
-    writeMembers(activeMembers);
+    await writeExpiredMembers(archive);
 
-    const releasedIds =
-      newlyExpired.map((member) =>
-        String(
-          member.id ||
-          member.memberId ||
-          ""
-        ).trim()
-      );
+    /*
+      IMPORTANT:
+      Expired members keep their original IDs in the archive.
+      IDs are NEVER released or reused.
+
+      New members always receive:
+      MAX existing numeric ID + 1
+    */
+    await writeMembers([...activeMembers]);
+
+    const expiredIds = newlyExpired.map((member) =>
+      String(member.id || member.memberId || "").trim()
+    );
 
     console.log(
-      `AUTO EXPIRY: ${newlyExpired.length} member(s) expired. Released IDs: ${releasedIds.join(", ")}`
+      `AUTO EXPIRY: ${newlyExpired.length} member(s) archived. IDs preserved: ${expiredIds.join(", ")}`
     );
 
     return {
       expiredCount: newlyExpired.length,
-      releasedIds,
     };
   } catch (error) {
     console.error(
@@ -715,7 +824,6 @@ function expireAndReleaseMemberIds() {
 
     return {
       expiredCount: 0,
-      releasedIds: [],
     };
   }
 }
@@ -800,89 +908,48 @@ function normalizeRegistrationRequest(
    READ REGISTRATION REQUESTS
 ========================================================= */
 
-function readRegistrationRequests() {
-  const file =
-    getRegistrationRequestsPath();
+async function readRegistrationRequests() {
+  const { data, error } = await supabase
+    .from("registration_requests")
+    .select("*")
+    .order("request_id", { ascending: true });
 
-  if (!fs.existsSync(file)) {
-    return [];
-  }
-
-  const workbook =
-    XLSX.readFile(file);
-
-  const sheetName =
-    workbook.SheetNames[0];
-
-  if (!sheetName) {
-    return [];
-  }
-
-  const sheet =
-    workbook.Sheets[
-      sheetName
-    ];
-
-  const rows =
-    XLSX.utils.sheet_to_json(
-      sheet,
-      {
-        defval: "",
-      }
-    );
-
-  return rows.map(
-    normalizeRegistrationRequest
-  );
+  if (error) throw error;
+  return (data || []).map(dbToRegistrationRequest);
 }
 
 /* =========================================================
    WRITE REGISTRATION REQUESTS
 ========================================================= */
 
-function writeRegistrationRequests(
-  requests
-) {
-  const file =
-    getRegistrationRequestsPath();
+async function writeRegistrationRequests(requests) {
+  const normalized = (requests || []).map(normalizeRegistrationRequest);
+  const { data: existing, error: readError } = await supabase
+    .from("registration_requests")
+    .select("request_id");
+  if (readError) throw readError;
 
-  const rows =
-    requests.map((request) => {
-      const row = {};
+  const incomingIds = new Set(normalized.map(r => String(r.requestId || "").trim()).filter(Boolean));
 
-      for (
-        const key of
-          REGISTRATION_REQUEST_HEADERS
-      ) {
-        row[key] =
-          request[key] ?? "";
-      }
+  for (const row of existing || []) {
+    const id = String(row.request_id || "").trim();
+    if (id && !incomingIds.has(id)) {
+      const { error } = await supabase
+        .from("registration_requests")
+        .delete()
+        .eq("request_id", id);
+      if (error) throw error;
+    }
+  }
 
-      return row;
-    });
+  if (normalized.length) {
+    const { error } = await supabase
+      .from("registration_requests")
+      .upsert(normalized.map(registrationRequestToDb), { onConflict: "request_id" });
+    if (error) throw error;
+  }
 
-  const workbook =
-    XLSX.utils.book_new();
-
-  const sheet =
-    XLSX.utils.json_to_sheet(
-      rows,
-      {
-        header:
-          REGISTRATION_REQUEST_HEADERS,
-      }
-    );
-
-  XLSX.utils.book_append_sheet(
-    workbook,
-    sheet,
-    "Registration Requests"
-  );
-
-  XLSX.writeFile(
-    workbook,
-    file
-  );
+  writeRegistrationRequestsExcelBackup(normalized);
 }
 
 /* =========================================================
@@ -925,7 +992,7 @@ function getNextRegistrationRequestId(
 
 app.get(
   "/api/test",
-  (req, res) => {
+  async (req, res) => {
     res.json({
       success: true,
       message:
@@ -936,18 +1003,16 @@ app.get(
 
 /* =========================================================
    GET MEMBERS
-   🔒 PROTECTED
+   ðŸ”’ PROTECTED
 ========================================================= */
 
 app.get(
   "/api/members",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
-      expireAndReleaseMemberIds();
-
       const members =
-        readMembers();
+        await readMembers();
 
       res.json({
         success: true,
@@ -970,21 +1035,21 @@ app.get(
 
 /* =========================================================
    GET NEXT MEMBER ID
-   🔒 PROTECTED
+   ðŸ”’ PROTECTED
 ========================================================= */
 
 app.get(
   "/api/next-member-id",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
       const members =
-        readMembers();
+        await readMembers();
 
       const requests =
-        readRegistrationRequests();
+        await readRegistrationRequests();
 
       const id =
         getNextMemberId(
@@ -1013,21 +1078,21 @@ app.get(
 
 /* =========================================================
    ADD MEMBER
-   🔒 PROTECTED
+   ðŸ”’ PROTECTED
 ========================================================= */
 
 app.post(
   "/api/members",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
       const members =
-        readMembers();
+        await readMembers();
 
       const requests =
-        readRegistrationRequests();
+        await readRegistrationRequests();
 
       /*
         NEVER trust the ID from React.
@@ -1055,7 +1120,7 @@ app.post(
 
           fingerprintAccess:
             incoming.fingerprintAccess ||
-            "Disabled",
+            "false",
         });
 
       // The active members array was loaded above as `members`.
@@ -1064,7 +1129,7 @@ app.post(
       // in the registration-approval flow below.
       members.push(member);
 
-      writeMembers(
+      await writeMembers(
         members
       );
 
@@ -1092,13 +1157,13 @@ app.post(
 
 /* =========================================================
    UPDATE MEMBER
-   🔒 PROTECTED
+   ðŸ”’ PROTECTED
 ========================================================= */
 
 app.put(
   "/api/members/:id",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const memberId =
         String(req.params.id || "").trim();
@@ -1110,9 +1175,9 @@ app.put(
         });
       }
 
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
-      const members = readMembers();
+      const members = await readMembers();
 
       const index =
         members.findIndex(
@@ -1203,7 +1268,7 @@ app.put(
       members[index] =
         updated;
 
-      writeMembers(members);
+      await writeMembers(members);
 
       return res.json({
         success: true,
@@ -1229,13 +1294,13 @@ app.put(
 
 /* =========================================================
    DELETE MEMBER
-   🔒 PROTECTED
+   ðŸ”’ PROTECTED
 ========================================================= */
 
 app.delete(
   "/api/members/:id",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const memberId =
         String(
@@ -1251,7 +1316,7 @@ app.delete(
       }
 
       const members =
-        readMembers();
+        await readMembers();
 
       const index =
         members.findIndex(
@@ -1280,7 +1345,7 @@ app.delete(
         1
       );
 
-      writeMembers(
+      await writeMembers(
         members
       );
 
@@ -1315,7 +1380,7 @@ app.delete(
 app.post(
   "/api/members/:id/renew",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const memberId = String(req.params.id || "").trim();
       const incoming = req.body || {};
@@ -1359,7 +1424,7 @@ app.post(
           ? paymentDateRaw
           : new Date().toISOString().split("T")[0];
 
-      const members = readMembers();
+      const members = await readMembers();
 
       const index = members.findIndex(
         (member) =>
@@ -1408,7 +1473,7 @@ app.post(
       member.status = "Active";
 
       members[index] = member;
-      writeMembers(members);
+      await writeMembers(members);
 
       return res.json({
         success: true,
@@ -1439,7 +1504,7 @@ app.post(
 
 app.post(
   "/api/customer/register",
-  (req, res) => {
+  async (req, res) => {
     try {
       const incoming =
         req.body || {};
@@ -1529,12 +1594,12 @@ app.post(
          CHECK EXISTING MEMBERS
       ----------------------------------------- */
 
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
       const members =
-        readMembers();
+        await readMembers();
 
       const existingMember =
         members.find(
@@ -1559,7 +1624,7 @@ app.post(
       ----------------------------------------- */
 
       const requests =
-        readRegistrationRequests();
+        await readRegistrationRequests();
       const existingTransaction = requests.find((request) => String(request.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
       const memberTransaction = members.find((member) => String(member.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
       if (existingTransaction || memberTransaction) {
@@ -1658,7 +1723,7 @@ app.post(
 
       requests.push(request);
 
-      writeRegistrationRequests(
+      await writeRegistrationRequests(
         requests
       );
 
@@ -1722,7 +1787,7 @@ app.post(
 
 app.post(
   "/api/public/register",
-  (req, res) => {
+  async (req, res) => {
     try {
       const incoming =
         req.body || {};
@@ -1793,7 +1858,7 @@ app.post(
       }
 
       const members =
-        readMembers();
+        await readMembers();
 
       const existingMember =
         members.find(
@@ -1814,7 +1879,7 @@ app.post(
       }
 
       const requests =
-        readRegistrationRequests();
+        await readRegistrationRequests();
       const existingTransaction = requests.find((request) => String(request.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
       const memberTransaction = members.find((member) => String(member.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
       if (existingTransaction || memberTransaction) {
@@ -1893,7 +1958,7 @@ app.post(
 
       requests.push(request);
 
-      writeRegistrationRequests(
+      await writeRegistrationRequests(
         requests
       );
 
@@ -1945,18 +2010,18 @@ app.post(
 
 /* =========================================================
    GET REGISTRATION REQUESTS
-   🔒 ADMIN ONLY
+   ðŸ”’ ADMIN ONLY
 ========================================================= */
 
 app.get(
   "/api/expired-members",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
       const members =
-        readExpiredMembers().sort(
+        (await readExpiredMembers()).sort(
           (a, b) =>
             String(b.expiredAt || "").localeCompare(
               String(a.expiredAt || "")
@@ -1986,10 +2051,10 @@ app.get(
 app.get(
   "/api/registration-requests",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const requests =
-        readRegistrationRequests().filter((request) => String(request.status || "").trim().toLowerCase() === "pending");
+        (await readRegistrationRequests()).filter((request) => String(request.status || "").trim().toLowerCase() === "pending");
 
       res.json({
         success: true,
@@ -2015,17 +2080,17 @@ app.get(
 
 /* =========================================================
    APPROVE REGISTRATION REQUEST
-   🔒 ADMIN ONLY
+   ðŸ”’ ADMIN ONLY
 
    Pending Request
-        ↓
+        â†“
    members.xlsx
 ========================================================= */
 
 app.post(
   "/api/registration-requests/:id/approve",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const requestId =
         String(
@@ -2041,7 +2106,7 @@ app.post(
       }
 
       const requests =
-        readRegistrationRequests();
+        await readRegistrationRequests();
 
 
       const requestIndex =
@@ -2090,7 +2155,7 @@ app.post(
       ----------------------------------------- */
 
       const members =
-        readMembers();
+        await readMembers();
 
       /* -----------------------------------------
          CHECK PHONE AGAIN
@@ -2121,10 +2186,10 @@ app.post(
          ASSIGN A PERMANENT ID ON APPROVAL
       ----------------------------------------- */
 
-      expireAndReleaseMemberIds();
+      await expireAndReleaseMemberIds();
 
       const refreshedMembers =
-        readMembers();
+        await readMembers();
 
       const memberId =
         getNextMemberId(
@@ -2231,7 +2296,7 @@ app.post(
             "Active",
 
           fingerprintAccess:
-            "Disabled",
+            "false",
 
           photo:
             request.photo,
@@ -2243,7 +2308,7 @@ app.post(
 
       refreshedMembers.push(member);
 
-      writeMembers(
+      await writeMembers(
         refreshedMembers
       );
 
@@ -2258,7 +2323,7 @@ app.post(
         1
       );
 
-      writeRegistrationRequests(
+      await writeRegistrationRequests(
         requests
       );
 
@@ -2299,13 +2364,13 @@ app.post(
 
 /* =========================================================
    REJECT REGISTRATION REQUEST
-   🔒 ADMIN ONLY
+   ðŸ”’ ADMIN ONLY
 ========================================================= */
 
 app.post(
   "/api/registration-requests/:id/reject",
   requireAuth,
-  (req, res) => {
+  async (req, res) => {
     try {
       const requestId =
         String(
@@ -2321,7 +2386,7 @@ app.post(
       }
 
       const requests =
-        readRegistrationRequests();
+        await readRegistrationRequests();
 
 
       const requestIndex =
@@ -2375,7 +2440,7 @@ app.post(
         1
       );
 
-      writeRegistrationRequests(
+      await writeRegistrationRequests(
         requests
       );
 
@@ -2422,10 +2487,10 @@ function getDailyExportDirectory() {
   return dir;
 }
 
-function createDailyExcelExport() {
+async function createDailyExcelExport() {
   try {
-    const members = readMembers();
-    const requests = readRegistrationRequests();
+    const members = await readMembers();
+    const requests = await readRegistrationRequests();
     const today = new Date().toISOString().split("T")[0];
     const file = path.join(getDailyExportDirectory(), `gym_data_${today}.xlsx`);
 
@@ -2451,7 +2516,7 @@ function createDailyExcelExport() {
 }
 
 function scheduleDailyExcelExport() {
-  createDailyExcelExport();
+  createDailyExcelExport().catch(error => console.error("DAILY EXCEL EXPORT ERROR:", error));
 
   const now = new Date();
   const next = new Date(now);
@@ -2459,8 +2524,10 @@ function scheduleDailyExcelExport() {
   if (next <= now) next.setDate(next.getDate() + 1);
 
   setTimeout(() => {
-    createDailyExcelExport();
-    setInterval(createDailyExcelExport, 24 * 60 * 60 * 1000);
+    createDailyExcelExport().catch(error => console.error("DAILY EXCEL EXPORT ERROR:", error));
+    setInterval(() => {
+      createDailyExcelExport().catch(error => console.error("DAILY EXCEL EXPORT ERROR:", error));
+    }, 24 * 60 * 60 * 1000);
   }, next.getTime() - now.getTime());
 }
 
@@ -2495,7 +2562,7 @@ setInterval(() => {
 
 app.get(
   "/",
-  (req, res) => {
+  async (req, res) => {
     res.json({
       success: true,
       message:
@@ -2514,9 +2581,9 @@ app.get(
   Membership expiry is a server-side database operation.
   Run immediately on startup, then every hour.
 */
-expireAndReleaseMemberIds();
+expireAndReleaseMemberIds().catch(error => console.error("STARTUP EXPIRY ERROR:", error));
 setInterval(
-  expireAndReleaseMemberIds,
+  () => expireAndReleaseMemberIds().catch(error => console.error("HOURLY EXPIRY ERROR:", error)),
   60 * 60 * 1000
 );
 
@@ -2553,4 +2620,12 @@ app.listen(
     console.log("");
   }
 );
+
+
+
+
+
+
+
+
 

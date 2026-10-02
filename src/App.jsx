@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 
 import {
   AppBar,
@@ -78,7 +78,7 @@ import {
 
 const drawerWidth = 240;
 
-const API_URL = "https://cuboid-fitness-backend.onrender.com";
+const API_URL = "http://localhost:3001";
 const PLAN_FEES = { Monthly: 1700, Quarterly: 4500, "Half Year": 8000, Yearly: 13999 };
 const getPlanFee = (plan) => PLAN_FEES[plan] || 0;
 
@@ -232,37 +232,40 @@ function prepareWhatsAppMessage(message, member) {
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [checkingAuth, setCheckingAuth] = useState(false);
 
   useEffect(() => {
-    async function checkLogin() {
-      const token = getStoredToken();
+  async function checkLogin() {
+    const token = getStoredToken();
 
-      if (!token) {
-        setCheckingAuth(false);
-        return;
-      }
-
-      try {
-        const response = await authFetch(
-          `${API_URL}/api/auth/check`
-        );
-
-        if (response.ok) {
-          setAuthenticated(true);
-        } else {
-          removeToken();
-        }
-      } catch (error) {
-        console.error("AUTH CHECK ERROR:", error);
-        removeToken();
-      }
-
+    if (!token) {
+      setAuthenticated(false);
       setCheckingAuth(false);
+      return;
     }
 
-    checkLogin();
-  }, []);
+    try {
+      const response = await authFetch(
+        `${API_URL}/api/auth/check`
+      );
+
+      if (response.ok) {
+        setAuthenticated(true);
+      } else {
+        removeToken();
+        setAuthenticated(false);
+      }
+    } catch (error) {
+      console.error("AUTH CHECK ERROR:", error);
+      removeToken();
+      setAuthenticated(false);
+    } finally {
+      setCheckingAuth(false);
+    }
+  }
+
+  checkLogin();
+}, []);
 
   if (checkingAuth) {
     return <LoadingScreen />;
@@ -872,10 +875,39 @@ function GymDashboard({ onLogout }) {
      INITIAL LOAD
   ======================================================= */
 useEffect(() => {
+  let mounted = true;
+
+  // Load only the essential data first.
   loadMembers();
-  loadNextMemberId();
-  loadRegistrationRequests();
-  loadExpiredMembers();
+
+  // Secondary data loads after the main member list.
+  const backgroundTimer = setTimeout(() => {
+    if (!mounted) return;
+
+    loadRegistrationRequests();
+    loadExpiredMembers();
+  }, 300);
+
+  // Refresh in the background every 60 seconds.
+  const refreshTimer = setInterval(() => {
+    if (!mounted) return;
+
+    loadMembers();
+
+    setTimeout(() => {
+      if (mounted) loadRegistrationRequests();
+    }, 500);
+
+    setTimeout(() => {
+      if (mounted) loadExpiredMembers();
+    }, 1000);
+  }, 60 * 1000);
+
+  return () => {
+    mounted = false;
+    clearTimeout(backgroundTimer);
+    clearInterval(refreshTimer);
+  };
 }, []);
   /* =======================================================
      EXPIRY DATE
@@ -1110,38 +1142,68 @@ useEffect(() => {
   function sendToSelectedWhatsApp() {
     const selected = membersWithCorrectStatus.filter(
       (member) =>
-        selectedWhatsAppMembers.includes(
-          member.id
-        )
+        selectedWhatsAppMembers.includes(member.id)
     );
 
     if (selected.length === 0) {
-      alert(
-        "Please select at least one member."
-      );
+      alert("Please select at least one member.");
       return;
     }
 
     if (!whatsappMessage.trim()) {
+      alert("Please write a WhatsApp message.");
+      return;
+    }
+
+    const validMembers = selected.filter(
+      (member) =>
+        member.phone &&
+        String(member.phone).trim()
+    );
+
+    const invalidCount =
+      selected.length - validMembers.length;
+
+    if (validMembers.length === 0) {
       alert(
-        "Please write a WhatsApp message."
+        "None of the selected members have a phone number."
       );
       return;
     }
 
-    /*
-      Open each selected member in a separate
-      WhatsApp tab.
+    const confirmed = window.confirm(
+      `Send WhatsApp message to ${validMembers.length} member(s)?` +
+      (invalidCount > 0
+        ? `\n\n${invalidCount} member(s) will be skipped because they have no phone number.`
+        : "")
+    );
 
-      Browser popup blockers can restrict multiple
-      tabs, so user may need to allow popups.
-    */
+    if (!confirmed) return;
 
-    selected.forEach((member, index) => {
-      setTimeout(() => {
-        sendWhatsAppMessage(member);
-      }, index * 500);
-    });
+    let index = 0;
+
+    const sendNext = () => {
+      if (index >= validMembers.length) {
+        alert(
+          `WhatsApp batch completed.\n\n` +
+          `Processed: ${validMembers.length}` +
+          (invalidCount > 0
+            ? `\nSkipped: ${invalidCount}`
+            : "")
+        );
+        return;
+      }
+
+      const member = validMembers[index];
+
+      sendWhatsAppMessage(member);
+
+      index++;
+
+      setTimeout(sendNext, 1000);
+    };
+
+    sendNext();
   }
 
   /* =======================================================
@@ -1556,6 +1618,67 @@ useEffect(() => {
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 
+  const normalizePlanName = (value) => {
+  const p = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (
+    p === "monthly" ||
+    p === "month" ||
+    p === "1 month"
+  ) {
+    return "Monthly";
+  }
+
+  if (
+    p === "quarterly" ||
+    p === "quarter" ||
+    p === "3 months" ||
+    p === "3 month"
+  ) {
+    return "Quarterly";
+  }
+
+  if (
+    p === "half year" ||
+    p === "half-year" ||
+    p === "half yearly" ||
+    p === "halfyear" ||
+    p === "6 months" ||
+    p === "6 month"
+  ) {
+    return "Half Year";
+  }
+
+  if (
+    p === "yearly" ||
+    p === "year" ||
+    p === "annual" ||
+    p === "12 months" ||
+    p === "12 month"
+  ) {
+    return "Yearly";
+  }
+
+  return String(value || "").trim();
+};
+
+const planStats = [
+  "Monthly",
+  "Quarterly",
+  "Half Year",
+  "Yearly",
+].map((plan) => ({
+  plan,
+  count: membersWithCorrectStatus.filter(
+    (member) =>
+      normalizePlanName(member.plan) === plan
+  ).length,
+}));
+
   const newThisMonth = membersWithCorrectStatus.filter((member) => {
     if (!member.joiningDate) return false;
     const d = new Date(`${member.joiningDate}T00:00:00`);
@@ -1569,20 +1692,10 @@ useEffect(() => {
     return sum + (Number(member.feeReceived) || 0);
   }, 0);
 
-  const planStats = [
-    "Monthly",
-    "Quarterly",
-    "Half Year",
-    "Yearly",
-  ].map((plan) => ({
-    plan,
-    count: membersWithCorrectStatus.filter((member) => member.plan === plan).length,
-  }));
-
   const maxPlanCount = Math.max(1, ...planStats.map((item) => item.count));
 
   /* =======================================================
-     CUBOID FITNESS — COMMAND CENTER
+     CUBOID FITNESS ${String.fromCharCode(0x2014)} COMMAND CENTER
   ======================================================= */
 
   return (
@@ -1605,9 +1718,9 @@ useEffect(() => {
         @keyframes cuboidScan { 0%{transform:translateX(-110%)} 100%{transform:translateX(500%)} }
         @keyframes cuboidRise { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
         @keyframes cuboidGlow { 0%,100%{filter:drop-shadow(0 0 5px rgba(255,208,0,.12))} 50%{filter:drop-shadow(0 0 16px rgba(255,208,0,.48))} }
-        .cuboid-card{position:relative;overflow:hidden;animation:cuboidRise .55s ease both}
-        .cuboid-card:after{content:"";position:absolute;left:-25%;top:0;width:12%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.045),transparent);transform:skewX(-18deg);animation:cuboidScan 7s linear infinite;pointer-events:none}
-        .cuboid-hover{transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease}
+        .cuboid-card{position:relative;overflow:hidden;animation:none}
+        .cuboid-card:after{content:none}
+        .cuboid-hover{transition:border-color .15s ease}
         .cuboid-hover:hover{transform:translateY(-4px);border-color:rgba(255,208,0,.70)!important;box-shadow:0 18px 45px rgba(0,0,0,.28),0 0 30px rgba(255,208,0,.12)!important}
         .cuboid-grid{background-image:linear-gradient(rgba(255,208,0,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,208,0,.035) 1px,transparent 1px);background-size:38px 38px}
         .cuboid-app .MuiCard-root{background:#0a0a0a!important;color:#f5f5f5;border-color:#292929!important}
@@ -1631,7 +1744,7 @@ useEffect(() => {
       
       
         /* =========================================================
-           CUBOID FITNESS — INDUSTRY GYM VISUAL LAYER
+           CUBOID FITNESS ${String.fromCharCode(0x2014)} INDUSTRY GYM VISUAL LAYER
            Visual only. No layout/API/functionality changes.
         ========================================================= */
         .cuboid-app {
@@ -1851,7 +1964,7 @@ useEffect(() => {
           color: #ffffff;
           background: linear-gradient(145deg, rgba(11,18,32,.94), rgba(8,14,24,.88)) !important;
           border-color: rgba(148,163,184,.15) !important;
-          backdrop-filter: blur(16px);
+          backdrop-filter: none;
         }
 
         .cuboid-app .cuboid-card .MuiTypography-root {
@@ -1879,7 +1992,7 @@ useEffect(() => {
           color: #ffffff !important;
         }
 
-        /* ADD MEMBER — consistent dark fields */
+        /* ADD MEMBER ${String.fromCharCode(0x2014)} consistent dark fields */
         .cuboid-app .MuiDialog-paper .MuiTextField-root .MuiInputBase-root {
           background: #0a101c !important;
           color: #ffffff !important;
@@ -1957,7 +2070,7 @@ useEffect(() => {
 
       
         /* =========================================================
-           CUBOID FITNESS — CONSISTENT SECTION TYPOGRAPHY
+           CUBOID FITNESS ${String.fromCharCode(0x2014)} CONSISTENT SECTION TYPOGRAPHY
            Same white font/icon language across WhatsApp and every section.
         ========================================================= */
         .cuboid-app {
@@ -2018,7 +2131,7 @@ useEffect(() => {
 
       
         /* =========================================================
-           WHATSAPP — INDUSTRY LEVEL DARK GLASS SYSTEM
+           WHATSAPP ${String.fromCharCode(0x2014)} INDUSTRY LEVEL DARK GLASS SYSTEM
         ========================================================= */
         .cuboid-whatsapp {
           position: relative;
@@ -2370,7 +2483,7 @@ useEffect(() => {
                 <Typography sx={{fontSize:{xs:26,md:34},fontWeight:950,letterSpacing:"-1px"}}>Command Center</Typography>
                 <Typography sx={{color:"#64748b",mt:.5,fontSize:13}}>Live intelligence for Cuboid Fitness operations.</Typography>
               </Box>
-              <Chip icon={<EventAvailable sx={{fontSize:16}}/>} label={`Today · ${new Date(`${today}T00:00:00`).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}`} sx={{bgcolor:"#0a0a0a",color:"#a78bfa",border:"1px solid #2b2250",fontWeight:800}} />
+              <Chip icon={<EventAvailable sx={{fontSize:16}}/>} label={`Today Â· ${new Date(`${today}T00:00:00`).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}`} sx={{bgcolor:"#0a0a0a",color:"#a78bfa",border:"1px solid #2b2250",fontWeight:800}} />
             </Box>
 
             {/* KPI row */}
@@ -2380,7 +2493,7 @@ useEffect(() => {
                 ["ACTIVE MEMBERS",activeMembers,CheckCircle,"#22d3ee","+8.3%","vs last month"],
                 ["NEW THIS MONTH",newThisMonth,GroupAdd,"#38bdf8","+15.7%","new joins"],
                 ["EXPIRING SOON",expiringSoon,Warning,"#fb923c","3 days","attention"],
-                ["MONTHLY REVENUE",`₹${monthlyRevenue.toLocaleString("en-IN")}`,MonetizationOn,"#34d399","Live","received"],
+                ["MONTHLY REVENUE",`${String.fromCharCode(0x20B9)}${monthlyRevenue.toLocaleString("en-IN")}`,MonetizationOn,"#34d399","Live","received"],
               ].map(([title,value,Icon,accent,delta,note],i)=>(
                 <Grid item xs={12} sm={6} lg={2.4} key={title} sx={{ minWidth: 0, boxSizing: "border-box" }}>
                   <Box className="cuboid-card cuboid-hover" sx={{height:"100%",boxSizing:"border-box",p:2,borderRadius:3,bgcolor:"rgba(11,18,32,.88)",border:"1px solid #292929",boxShadow:"0 14px 40px rgba(0,0,0,.20)"}}>
@@ -2434,7 +2547,7 @@ useEffect(() => {
 
                         return (
                           <Box
-                            key={`${monthKeys[i].year}-${monthKeys[i].month}`}
+                            key={`${monthKeys[i].year}-${monthKeys[i].month}-${i}`}
                             sx={{
                               flex: 1,
                               height: `${height}%`,
@@ -2473,7 +2586,7 @@ useEffect(() => {
               <Grid item xs={12} md={6} lg={2.5} sx={{ minWidth: 0, boxSizing: "border-box" }}>
                 <Box className="cuboid-card" sx={{p:2.2,borderRadius:3,bgcolor:"rgba(11,18,32,.88)",border:"1px solid #292929",height:"100%",boxSizing:"border-box"}}>
                   <Typography sx={{fontWeight:900,fontSize:14}}>Plan Mix</Typography><Typography sx={{fontSize:10,color:"#64748b",mt:.3}}>Current members</Typography>
-                  <Box sx={{width:140,height:140,mx:"auto",my:2,borderRadius:"50%",background:"conic-gradient(#8b5cf6 0 42%, #22d3ee 42% 70%, #38bdf8 70% 88%, #f59e0b 88% 100%)",display:"grid",placeItems:"center",position:"relative",animation:"cuboidPulse 4s ease-in-out infinite"}}><Box sx={{width:96,height:96,borderRadius:"50%",bgcolor:"#0a0a0a",display:"grid",placeItems:"center",textAlign:"center"}}><Typography sx={{fontSize:22,fontWeight:950}}>{members.length}</Typography><Typography sx={{fontSize:9,color:"#64748b"}}>TOTAL</Typography></Box></Box>
+                  <Box sx={{width:140,height:140,mx:"auto",my:2,borderRadius:"50%",background:"conic-gradient(#8b5cf6 0 42%, #22d3ee 42% 70%, #38bdf8 70% 88%, #f59e0b 88% 100%)",display:"grid",placeItems:"center",position:"relative",animation:"cuboidPulse 4s ease-in-out infinite"}}><Box sx={{width:96,height:96,borderRadius:"50%",bgcolor:"#0a0a0a",display:"grid",placeItems:"center",textAlign:"center"}}><Typography sx={{fontSize:28,fontWeight:950,lineHeight:1}}>{members.length}</Typography><Typography sx={{fontSize:10,color:"#94a3b8",fontWeight:800,mt:.5}}>MEMBERS</Typography></Box></Box>
                   <Stack spacing={1}>{planStats.map((x,i)=><Box key={x.plan} sx={{display:"flex",alignItems:"center",gap:1}}><Box sx={{width:7,height:7,borderRadius:"50%",bgcolor:["#8b5cf6","#22d3ee","#38bdf8","#f59e0b"][i]}}/><Typography sx={{fontSize:10,flex:1,color:"#94a3b8"}}>{x.plan}</Typography><Typography sx={{fontSize:10,fontWeight:900}}>{x.count}</Typography></Box>)}</Stack>
                 </Box>
               </Grid>
@@ -2482,7 +2595,7 @@ useEffect(() => {
                 <Box className="cuboid-card" sx={{p:2.2,borderRadius:3,bgcolor:"rgba(11,18,32,.88)",border:"1px solid #292929",height:"100%",boxSizing:"border-box"}}>
                   <Typography sx={{fontWeight:900,fontSize:14}}>Operations Pulse</Typography><Typography sx={{fontSize:10,color:"#64748b",mt:.3}}>Today at a glance</Typography>
                   <Stack spacing={1.5} sx={{mt:2}}>
-                    {[["New registrations",newThisMonth,GroupAdd,"#a78bfa"],["Active members",activeMembers,CheckCircle,"#22c55e"],["Expiring soon",expiringSoon,Warning,"#fb923c"],["Revenue received",`₹${monthlyRevenue.toLocaleString("en-IN")}`,MonetizationOn,"#34d399"]].map(([label,val,Icon,c],i)=><Box key={label} sx={{display:"flex",alignItems:"center",gap:1.1,p:1.1,borderRadius:2,bgcolor:"#0a101c",border:"1px solid #172236"}}><Box sx={{width:30,height:30,borderRadius:1.7,bgcolor:`${c}12`,color:c,display:"grid",placeItems:"center"}}><Icon sx={{fontSize:15}}/></Box><Box sx={{flex:1}}><Typography sx={{fontSize:9,color:"#64748b"}}>{label}</Typography><Typography sx={{fontSize:14,fontWeight:900}}>{val}</Typography></Box></Box>)}
+                    {[["New registrations",newThisMonth,GroupAdd,"#a78bfa"],["Active members",activeMembers,CheckCircle,"#22c55e"],["Expiring soon",expiringSoon,Warning,"#fb923c"],["Revenue received",`${String.fromCharCode(0x20B9)}${monthlyRevenue.toLocaleString("en-IN")}`,MonetizationOn,"#34d399"]].map(([label,val,Icon,c],i)=><Box key={label} sx={{display:"flex",alignItems:"center",gap:1.1,p:1.1,borderRadius:2,bgcolor:"#0a101c",border:"1px solid #172236"}}><Box sx={{width:30,height:30,borderRadius:1.7,bgcolor:`${c}12`,color:c,display:"grid",placeItems:"center"}}><Icon sx={{fontSize:15}}/></Box><Box sx={{flex:1}}><Typography sx={{fontSize:9,color:"#64748b"}}>{label}</Typography><Typography sx={{fontSize:14,fontWeight:900}}>{val}</Typography></Box></Box>)}
                   </Stack>
                 </Box>
               </Grid>
@@ -2523,8 +2636,8 @@ useEffect(() => {
 
             <Box sx={{mt:1.5,p:1.7,borderRadius:2.5,bgcolor:"#0a0a0a",border:"1px solid #182235"}}>
               <Typography sx={{fontSize:9,color:"#64748b",letterSpacing:1.2,fontWeight:900}}>PAYMENT SNAPSHOT</Typography>
-              <Box sx={{display:"flex",justifyContent:"space-between",mt:1.2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Plan fee</Typography><Typography sx={{fontWeight:900}}>₹{Number(selectedMember.planFee||0).toLocaleString("en-IN")}</Typography></Box>
-              <Box sx={{display:"flex",justifyContent:"space-between",mt:.8}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Received</Typography><Typography sx={{fontWeight:900,color:"#34d399"}}>₹{Number(selectedMember.feeReceived||0).toLocaleString("en-IN")}</Typography></Box>
+              <Box sx={{display:"flex",justifyContent:"space-between",mt:1.2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Plan fee</Typography><Typography sx={{fontWeight:900}}>${String.fromCharCode(0x20B9)}{Number(selectedMember.planFee||0).toLocaleString("en-IN")}</Typography></Box>
+              <Box sx={{display:"flex",justifyContent:"space-between",mt:.8}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Received</Typography><Typography sx={{fontWeight:900,color:"#34d399"}}>${String.fromCharCode(0x20B9)}{Number(selectedMember.feeReceived||0).toLocaleString("en-IN")}</Typography></Box>
               <Box sx={{display:"flex",justifyContent:"space-between",mt:.8}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Method</Typography><Typography sx={{fontWeight:900}}>{selectedMember.paymentMethod || "—"}</Typography></Box>
                <Box sx={{display:"flex",justifyContent:"space-between",mt:.8,gap:2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Payment Status</Typography><Chip size="small" label={selectedMember.paymentStatus || "Pending"} color={selectedMember.paymentStatus === "Paid" ? "success" : "warning"} /></Box>
                <Box sx={{display:"flex",justifyContent:"space-between",mt:.8,gap:2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Transaction ID</Typography><Typography sx={{fontWeight:900,fontSize:11,wordBreak:"break-all",textAlign:"right"}}>{selectedMember.transactionId || selectedMember.utr || selectedMember.paymentTransactionId || "NOT STORED"}</Typography></Box>
@@ -2615,7 +2728,7 @@ useEffect(() => {
               color: "rgba(255,255,255,.68)",
             }}
           >
-            {selectedMember?.name || "Member"} ·{" "}
+            {selectedMember?.name || "Member"} Â·{" "}
             {selectedMember?.id || ""}
           </Typography>
         </DialogTitle>
@@ -2721,7 +2834,7 @@ useEffect(() => {
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      ₹
+                      ${String.fromCharCode(0x20B9)}
                     </InputAdornment>
                   ),
                 }}
@@ -2950,7 +3063,7 @@ useEffect(() => {
         },
       }}
     >
-      ● Enabled
+      â— Enabled
     </MuiMenuItem>
 
     <MuiMenuItem
@@ -2967,7 +3080,7 @@ useEffect(() => {
         },
       }}
     >
-      ● Disabled
+      â— Disabled
     </MuiMenuItem>
   </TextField>
 </Grid>
@@ -3361,7 +3474,7 @@ useEffect(() => {
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      ₹
+                      ${String.fromCharCode(0x20B9)}
                     </InputAdornment>
                   ),
                 }}
@@ -3389,7 +3502,7 @@ useEffect(() => {
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      ₹
+                      ${String.fromCharCode(0x20B9)}
                     </InputAdornment>
                   ),
                 }}
@@ -3996,13 +4109,106 @@ function MembersCard({
   onDelete,
   onMemberClick,
 }) {
+
+  function exportMembersExcel() {
+    const headers = [
+      "Member ID",
+      "Fingerprint ID",
+      "Name",
+      "Phone",
+      "Email",
+      "Plan",
+      "Joining Date",
+      "Payment Date",
+      "Expiry Date",
+      "Status",
+      "Amount",
+    ];
+
+    const rows = members.map((member) => [
+      member.id || "",
+      member.fingerprintId || "",
+      member.name || "",
+      member.phone || "",
+      member.email || "",
+      member.plan || "",
+      member.joiningDate || "",
+      member.paymentDate || "",
+      member.expiryDate || "",
+      member.status || "",
+      member.amount || "",
+    ]);
+
+    const csv = [
+      headers,
+      ...rows,
+    ]
+      .map((row) =>
+        row.map((value) =>
+          '"' + String(value).replace(/"/g, '""') + '"'
+        ).join(",")
+      )
+      .join("\r\n");
+
+    const blob = new Blob(["\uFEFF" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download =
+      "gym_members_" +
+      new Date().toISOString().slice(0, 10) +
+      ".csv";
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+  }
   return (
     <Box className="cuboid-card" sx={{ borderRadius:3, bgcolor:"rgba(11,18,32,.88)", border:"1px solid #292929", overflow:"hidden" }}>
       <Box sx={{p:{xs:1.8,sm:2.2},display:"flex",justifyContent:"space-between",alignItems:"center",gap:2,flexWrap:"wrap",borderBottom:"1px solid #1b2638"}}>
-        <Box><Typography sx={{fontWeight:950,fontSize:15}}>Member Directory</Typography><Typography sx={{fontSize:10,color:"#64748b",mt:.3}}>{members.length} members · Click a member to open full profile</Typography></Box>
+        <Box><Typography sx={{fontWeight:950,fontSize:15}}>Member Directory</Typography><Typography sx={{fontSize:10,color:"#64748b",mt:.3}}>{members.length} members Â· Click a member to open full profile</Typography></Box>
         <Box sx={{display:"flex",gap:1,alignItems:"center",flexWrap:"wrap"}}>
           <TextField size="small" placeholder="Search members..." value={search} onChange={(e)=>setSearch(e.target.value)} InputProps={{startAdornment:<InputAdornment position="start"><Search sx={{color:"#64748b"}}/></InputAdornment>}} sx={{minWidth:{xs:180,sm:240},"& .MuiOutlinedInput-root":{bgcolor:"#0a101c",color:"#f5f5f5","& fieldset":{borderColor:"#243043"}}}} />
-          <Button variant="contained" startIcon={<PersonAdd/>} onClick={onAdd} sx={{textTransform:"none",fontWeight:900,bgcolor:"#7c3aed",borderRadius:2,"&:hover":{bgcolor:"#6d28d9"}}}>Add Member</Button>
+          <Button
+  variant="outlined"
+  onClick={exportMembersExcel}
+  sx={{
+    textTransform: "none",
+    fontWeight: 900,
+    borderRadius: 2,
+    borderColor: "#7c3aed",
+    color: "#a78bfa",
+    "&:hover": {
+      borderColor: "#a78bfa",
+      bgcolor: "rgba(124,58,237,.10)"
+    }
+  }}
+>
+  Export Excel
+</Button>
+
+<Button
+  variant="contained"
+  startIcon={<PersonAdd/>}
+  onClick={onAdd}
+  sx={{
+    textTransform: "none",
+    fontWeight: 900,
+    bgcolor: "#7c3aed",
+    borderRadius: 2,
+    "&:hover": {
+      bgcolor: "#6d28d9"
+    }
+  }}
+>
+  Add Member
+</Button>
         </Box>
       </Box>
       <MemberTable members={members} onDelete={onDelete} onMemberClick={onMemberClick}/>
@@ -4169,63 +4375,137 @@ function ExpiringSoonCard({
 ========================================================= */
 
 function MemberTable({ members, onDelete, onMemberClick }) {
+  const sortedMembers = [...members].sort((a, b) => {
+    const aId = Number(a.id);
+    const bId = Number(b.id);
+
+    if (Number.isFinite(aId) && Number.isFinite(bId)) {
+      return aId - bId;
+    }
+
+    if (Number.isFinite(aId)) return -1;
+    if (Number.isFinite(bId)) return 1;
+
+    return String(a.id || "").localeCompare(
+      String(b.id || ""),
+      undefined,
+      { numeric: true }
+    );
+  });
+
   return (
     <Box sx={{overflowX:"auto"}}>
       <Box sx={{minWidth:900}}>
         <Box sx={{display:"grid",gridTemplateColumns:"95px 1.15fr 105px 105px 120px 120px 95px 95px",gap:1,px:2,py:1.3,color:"#64748b",fontSize:9,fontWeight:900,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #182235"}}>
-          <span>Member ID</span><span>Member</span><span>Fingerprint</span><span>Plan</span><span>Joining Date</span><span>Expiry</span><span>Status</span><span>Actions</span>
+          <span>Member ID</span>
+          <span>Member</span>
+          <span>Fingerprint</span>
+          <span>Plan</span>
+          <span>Joining Date</span>
+          <span>Expiry</span>
+          <span>Status</span>
+          <span>Actions</span>
         </Box>
-        {members.length===0 ? <Box sx={{textAlign:"center",py:7,color:"#64748b"}}><Typography sx={{color:"#64748b"}}>No members found.</Typography></Box> : members.map((member,i)=>(
-          <Box key={member.id} className="cuboid-hover" onClick={()=>onMemberClick?.(member)} sx={{display:"grid",gridTemplateColumns:"95px 1.15fr 105px 105px 120px 120px 95px 95px",gap:1,alignItems:"center",px:2,py:1.45,borderBottom:"1px solid #111a29",cursor:"pointer",animation:`cuboidRise ${.12+i*.05}s ease both`}}>
-            <Typography sx={{fontSize:10,color:"#8b5cf6",fontWeight:900}}>{member.id}</Typography>
-            <Box sx={{display:"flex",alignItems:"center",gap:1.2}}>
-              <Avatar src={member.photo||undefined} sx={{width:34,height:34,bgcolor:"#17122d",border:"1px solid #31235f",fontSize:12}}>{!member.photo && member.name?.charAt(0)}</Avatar>
-              <Box><Typography sx={{fontSize:12,fontWeight:900}}>{member.name}</Typography><Typography sx={{fontSize:9,color:"#64748b"}}>{member.phone || "No phone"}</Typography></Box>
-            </Box>
-            <Typography sx={{fontSize:11,color:"#22d3ee",fontWeight:900}}>{member.fingerprintId || member.id || "—"}</Typography>
-            <Chip label={member.plan||"—"} size="small" sx={{height:23,bgcolor:"#14102a",color:"#c4b5fd",border:"1px solid #34256a",fontSize:9,fontWeight:800}}/>
-            <Typography sx={{fontSize:11,color:"#cbd5e1",fontWeight:700}}>{formatDisplayDate(member.joiningDate)}</Typography>
-            <Typography sx={{fontSize:11,color:"#cbd5e1"}}>{formatDisplayDate(member.expiryDate)}</Typography>
-            <Chip label={member.status||"Active"} size="small" sx={{height:22,bgcolor:member.status==="Expired"?"#2a1116":"#10261b",color:member.status==="Expired"?"#fb7185":"#4ade80",fontSize:9,fontWeight:900}}/>
-            <Box sx={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:.5}}>
-              <IconButton
-                size="small"
-                onClick={(e)=>{e.stopPropagation();onMemberClick?.(member)}}
-                sx={{
-                  color:"#ffffff",
-                  bgcolor:"#14102a",
-                  border:"1px solid #2b2250",
-                  "&:hover":{bgcolor:"#21183f"}
-                }}
-                aria-label="View member"
-              >
-                <ChevronRight sx={{fontSize:18}}/>
-              </IconButton>
-              <IconButton
-                size="small"
-                onClick={(e)=>{e.stopPropagation();onDelete?.(member)}}
-                sx={{
-                  color:"#ffffff",
-                  bgcolor:"#141018",
-                  border:"1px solid #3a2430",
-                  "&:hover":{bgcolor:"#2a1116",color:"#fb7185",borderColor:"#7f1d1d"}
-                }}
-                aria-label="Delete member"
-              >
-                <DeleteIcon sx={{fontSize:17}}/>
-              </IconButton>
-            </Box>
+
+        {sortedMembers.length === 0 ? (
+          <Box sx={{textAlign:"center",py:7,color:"#64748b"}}>
+            <Typography sx={{color:"#64748b"}}>
+              No members found.
+            </Typography>
           </Box>
-        ))}
+        ) : (
+          sortedMembers.map((member, i) => (
+            <Box
+              key={member.id}
+              className="cuboid-hover"
+              onClick={() => onMemberClick?.(member)}
+              sx={{
+                display:"grid",
+                gridTemplateColumns:"95px 1.15fr 105px 105px 120px 120px 95px 95px",
+                gap:1,
+                alignItems:"center",
+                px:2,
+                py:1.45,
+                borderBottom:"1px solid #111a29",
+                cursor:"pointer",
+                animation:`cuboidRise ${.12+i*.05}s ease both`
+              }}
+            >
+              <Typography sx={{fontSize:10,color:"#8b5cf6",fontWeight:900}}>
+                {member.id}
+              </Typography>
+
+              <Box sx={{display:"flex",alignItems:"center",gap:1.2}}>
+                <Avatar
+                  sx={{
+                    width:30,
+                    height:30,
+                    fontSize:11,
+                    fontWeight:900,
+                    bgcolor:"#172033",
+                    color:"#c4b5fd"
+                  }}
+                >
+                  {String(member.name || "?").charAt(0).toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography sx={{fontSize:11,fontWeight:800,color:"#f1f5f9"}}>
+                    {member.name}
+                  </Typography>
+                  <Typography sx={{fontSize:9,color:"#64748b"}}>
+                    {member.phone || "—"}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Typography sx={{fontSize:10,color:"#cbd5e1"}}>
+                {member.fingerprintId || "—"}
+              </Typography>
+
+              <Typography sx={{fontSize:10,color:"#cbd5e1"}}>
+                {member.plan || "—"}
+              </Typography>
+
+              <Typography sx={{fontSize:10,color:"#94a3b8"}}>
+                {member.joiningDate || "—"}
+              </Typography>
+
+              <Typography sx={{fontSize:10,color:"#94a3b8"}}>
+                {member.expiryDate || "—"}
+              </Typography>
+
+              <Typography sx={{fontSize:9,fontWeight:900,color:"#22c55e"}}>
+                {member.status || "Active"}
+              </Typography>
+
+              <Box sx={{display:"flex",gap:.5}}>
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMemberClick?.(member);
+                  }}
+                >
+                  <Edit sx={{fontSize:15}} />
+                </IconButton>
+
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete?.(member);
+                  }}
+                >
+                  <DeleteIcon sx={{fontSize:15}} />
+                </IconButton>
+              </Box>
+            </Box>
+          ))
+        )}
       </Box>
     </Box>
   );
 }
-
-/* =========================================================
-   EMPTY STATE
-========================================================= */
-
 function EmptyState({
   title,
   text,
@@ -4413,12 +4693,12 @@ function PaymentsPage({ members }) {
             <Box key={member.id} sx={{p:2,mb:1.2,border:"1px solid #e2e8f0",borderRadius:2.5}}>
               <Stack direction={{xs:"column",md:"row"}} spacing={2} justifyContent="space-between">
                 <Box>
-                  <Typography fontWeight={900}>{member.name} · Member {member.id}</Typography>
-                  <Typography variant="body2" color="text.secondary">Plan: {member.plan} · Date: {member.paymentDate || "—"}</Typography>
-                  <Typography variant="body2" color="text.secondary">Method: {member.paymentMethod || "—"} · UTR: {member.transactionId || "—"}</Typography>
+                  <Typography fontWeight={900}>{member.name} Â· Member {member.id}</Typography>
+                  <Typography variant="body2" color="text.secondary">Plan: {member.plan} Â· Date: {member.paymentDate || "—"}</Typography>
+                  <Typography variant="body2" color="text.secondary">Method: {member.paymentMethod || "—"} Â· UTR: {member.transactionId || "—"}</Typography>
                 </Box>
                 <Box sx={{textAlign:{xs:"left",md:"right"}}}>
-                  <Typography fontWeight={950}>₹{Number(member.feeReceived || member.planFee || 0).toLocaleString("en-IN")}</Typography>
+                  <Typography fontWeight={950}>${String.fromCharCode(0x20B9)}{Number(member.feeReceived || member.planFee || 0).toLocaleString("en-IN")}</Typography>
                   <Chip size="small" label={member.paymentStatus || "Pending"} color={member.paymentStatus === "Paid" ? "success" : "warning"} sx={{mt:.5}}/>
                 </Box>
               </Stack>
@@ -4537,7 +4817,7 @@ function FinancialAnalysis({ members }) {
                       mt: 1,
                     }}
                   >
-                    ₹
+                    ${String.fromCharCode(0x20B9)}
                     {monthlyIncoming.toLocaleString(
                       "en-IN"
                     )}
@@ -4660,7 +4940,7 @@ function FinancialAnalysis({ members }) {
             }}
           >
             {monthName}{" "}
-            {currentYear} — Incoming Payments
+            {currentYear} ${String.fromCharCode(0x2014)} Incoming Payments
           </Typography>
 
           {monthlyPayments.length === 0 ? (
@@ -4756,7 +5036,7 @@ function FinancialAnalysis({ members }) {
                     <Typography
                       fontWeight="bold"
                     >
-                      ₹
+                      ${String.fromCharCode(0x20B9)}
                       {(
                         Number(
                           member.feeReceived
@@ -4786,7 +5066,7 @@ function FinancialAnalysis({ members }) {
                   variant="h6"
                   fontWeight="bold"
                 >
-                  Total Incoming: ₹
+                  Total Incoming: ${String.fromCharCode(0x20B9)}
                   {monthlyIncoming.toLocaleString(
                     "en-IN"
                   )}
@@ -4903,7 +5183,7 @@ function RegistrationApprovals({
 
                       <Box sx={{mt:1}}>
                         <Typography color="text.secondary">Membership / Gym / Fingerprint ID: {request.memberId || request.fingerprintId || "—"}</Typography>
-                        <Typography color="text.secondary" sx={{fontWeight:800}}>Payment: ₹{Number(request.paymentAmount || 0).toLocaleString("en-IN")} · {request.paymentStatus || "Submitted"}</Typography>
+                        <Typography color="text.secondary" sx={{fontWeight:800}}>Payment: ${String.fromCharCode(0x20B9)}{Number(request.paymentAmount || 0).toLocaleString("en-IN")} Â· {request.paymentStatus || "Submitted"}</Typography>
                         <Typography color="text.secondary" sx={{fontWeight:800}}>
   UTR / Transaction ID: {request.transactionId || request.utr || request.paymentTransactionId || "NOT STORED"}
 </Typography>
@@ -4956,3 +5236,12 @@ function RegistrationApprovals({
 }
 
 export default App;   
+
+
+
+
+
+
+
+
+
