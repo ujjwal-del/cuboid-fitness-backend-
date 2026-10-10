@@ -565,7 +565,7 @@ function GymDashboard({ onLogout }) {
   const [openEditMember, setOpenEditMember] = useState(false);
   const [savingEditMember, setSavingEditMember] = useState(false);
   const [editMemberForm, setEditMemberForm] = useState({
-    memberId: "", name: "", phone: "", plan: "Monthly", joiningDate: "",
+    fingerprintId: "", name: "", phone: "", plan: "Monthly", joiningDate: "",
     expiryDate: "", planFee: "0", feeReceived: "0", paymentMethod: "",
     paymentStatus: "Pending", paymentCompleted: false, paymentDate: "", transactionId: "", paymentAmount: "0",
     status: "Active", fingerprintAccess: "Disabled",
@@ -1404,7 +1404,7 @@ useEffect(() => {
   function openMemberEditor(member) {
     if (!member) return;
     setEditMemberForm({
-      memberId: String(member.id || member.memberId || member.fingerprintId || ""),
+      fingerprintId: String(member.fingerprintId || member.id || ""),
       name: member.name || "", phone: member.phone || "", plan: member.plan || "Monthly",
       joiningDate: member.joiningDate || "", expiryDate: member.expiryDate || "",
       planFee: String(member.planFee ?? 0), feeReceived: String(member.feeReceived ?? 0),
@@ -1422,8 +1422,8 @@ useEffect(() => {
 
   async function handleUpdateMember() {
     if (!selectedMember) return;
-    if (!/^\d+$/.test(String(editMemberForm.memberId || "").trim())) {
-      alert("Member / Gym / Fingerprint ID must contain numbers only."); return;
+    if (!String(editMemberForm.fingerprintId || "").trim()) {
+      alert("Please enter a fingerprint ID."); return;
     }
     if (!editMemberForm.name.trim()) { alert("Please enter the member name."); return; }
     const normalizedPhone = String(editMemberForm.phone ?? "")
@@ -3000,11 +3000,11 @@ const planStats = [
         PaperProps={{sx:{bgcolor:"#ffffff",color:"#f5f5f5",border:"1px solid rgba(129,92,246,.35)",borderRadius:4}}}>
         <DialogTitle sx={{color:"#fff",borderBottom:"1px solid #1f2a3a"}}>
           <Typography sx={{fontWeight:950,fontSize:20}}>Edit Member Details</Typography>
-          <Typography sx={{color:"#94a3b8",fontSize:12,mt:.5}}>Member ID, Gym ID and Fingerprint ID use the same value.</Typography>
+          <Typography sx={{color:"#94a3b8",fontSize:12,mt:.5}}>Member ID and Gym ID cannot be changed. Fingerprint ID can be updated for the access device.</Typography>
         </DialogTitle>
         <DialogContent dividers sx={{borderColor:"#1f2a3a",pt:2.5}}>
           <Grid container spacing={2}>
-            <Grid item xs={12} md={6}><TextField fullWidth label="Member / Gym / Fingerprint ID" value={editMemberForm.memberId} onChange={(e)=>updateEditMemberForm("memberId",e.target.value.replace(/\D/g,""))}/></Grid>
+            <Grid item xs={12} md={6}><TextField fullWidth label="Fingerprint ID" helperText="Must be unique; this can differ from the member ID." value={editMemberForm.fingerprintId} onChange={(e)=>updateEditMemberForm("fingerprintId",e.target.value)}/></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth label="Name" value={editMemberForm.name} onChange={(e)=>updateEditMemberForm("name",e.target.value)}/></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth label="Phone" value={editMemberForm.phone} onChange={(e)=>updateEditMemberForm("phone",e.target.value.replace(/\D/g,"").slice(0,10))}/></Grid>
             <Grid item xs={12} md={6}><TextField select fullWidth label="Plan" value={editMemberForm.plan} onChange={(e)=>updateEditMemberForm("plan",e.target.value)}>{["Monthly","Quarterly","Half Year","Yearly"].map((v)=><MuiMenuItem key={v} value={v}>{v}</MuiMenuItem>)}</TextField></Grid>

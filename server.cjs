@@ -1177,9 +1177,8 @@ app.put(
         req.body || {};
 
       /*
-        The member ID is immutable.
-        Editing a profile must never steal or change another
-        member's reusable ID.
+        The member ID is immutable. A device fingerprint ID is separate
+        and may be corrected by an administrator.
       */
       const updated =
         normalizeMember({
@@ -1189,7 +1188,9 @@ app.put(
           memberId: current.id,
           customerId: current.id,
           gymId: current.id,
-          fingerprintId: current.id,
+          fingerprintId: String(
+            incoming.fingerprintId ?? current.fingerprintId ?? current.id
+          ).trim(),
         });
 
       if (!String(updated.name || "").trim()) {
@@ -1197,6 +1198,23 @@ app.put(
           success: false,
           error: "Member name is required.",
         });
+      }
+
+      if (!updated.fingerprintId) {
+        return res.status(400).json({ success: false, error: "Fingerprint ID is required." });
+      }
+
+      if (updated.fingerprintId.length > 100) {
+        return res.status(400).json({ success: false, error: "Fingerprint ID must be 100 characters or fewer." });
+      }
+
+      const duplicateFingerprint = members.find(
+        (member, memberIndex) =>
+          memberIndex !== index &&
+          String(member.fingerprintId || "").trim().toLowerCase() === updated.fingerprintId.toLowerCase()
+      );
+      if (duplicateFingerprint) {
+        return res.status(409).json({ success: false, error: "That fingerprint ID is already assigned to another member." });
       }
 
       // Normalize phone input before validation.
@@ -1571,8 +1589,6 @@ app.post(
       /* -----------------------------------------
          CHECK EXISTING MEMBERS
       ----------------------------------------- */
-
-      await expireAndReleaseMemberIds();
 
       await expireAndReleaseMemberIds();
 

@@ -17,6 +17,7 @@ import {
   CameraAlt,
   CheckCircle,
   FitnessCenter,
+  Payments,
   Person,
   Phone,
   Replay,
@@ -169,6 +170,7 @@ export default function CustomerRegister() {
     phone: "",
     plan: "",
     joiningDate: today,
+    transactionId: "",
     photo: "",
   });
 
@@ -288,10 +290,10 @@ export default function CustomerRegister() {
           "bot",
           "Perfect. Your photo is ready. 👍"
         );
-        setStage("confirm");
+        setStage("transaction");
         addMessage(
           "bot",
-          "Please review your details below and confirm your registration."
+          "Please enter the UTR / transaction ID for your membership payment."
         );
       };
 
@@ -381,10 +383,27 @@ export default function CustomerRegister() {
       setTyping(false);
       addMessage(
         "bot",
-        "No problem. Please review your registration details below."
+        "No problem. Please enter the UTR / transaction ID for your membership payment."
       );
     }, 450);
-    setStage("confirm");
+    setStage("transaction");
+  }
+
+  function submitTransaction() {
+    const transactionId = input.replace(/\s/g, "");
+    if (transactionId.length < 6 || transactionId.length > 50) {
+      setError("Please enter a valid UTR / transaction ID (6 to 50 characters).");
+      return;
+    }
+    updateForm("transactionId", transactionId);
+    addMessage("user", transactionId);
+    setInput("");
+    setTyping(true);
+    setTimeout(() => {
+      setTyping(false);
+      addMessage("bot", "Please review your details below and confirm your registration.");
+      setStage("confirm");
+    }, 250);
   }
 
   function startOver() {
@@ -393,6 +412,7 @@ export default function CustomerRegister() {
       phone: "",
       plan: "",
       joiningDate: today,
+      transactionId: "",
       photo: "",
     });
 
@@ -433,6 +453,12 @@ export default function CustomerRegister() {
       return;
     }
 
+    if (String(form.transactionId || "").length < 6) {
+      setError("Please enter a valid UTR / transaction ID.");
+      setStage("transaction");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -442,6 +468,7 @@ export default function CustomerRegister() {
         name: form.name.trim(),
         phone: form.phone,
         plan: form.plan,
+        transactionId: form.transactionId,
         joiningDate: form.joiningDate,
         expiryDate,
         planFee: 0,
@@ -1123,16 +1150,14 @@ export default function CustomerRegister() {
             </Box>
           )}
 
-          {(stage === "name" || stage === "phone") && (
+          {(stage === "name" || stage === "phone" || stage === "transaction") && (
             <Box
               component="form"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (stage === "name") {
-                  submitName();
-                } else {
-                  submitPhone();
-                }
+                if (stage === "name") submitName();
+                else if (stage === "phone") submitPhone();
+                else submitTransaction();
               }}
               sx={{
                 display: "flex",
@@ -1142,8 +1167,10 @@ export default function CustomerRegister() {
             >
               {stage === "name" ? (
                 <Person sx={{ ml: .8, color: "#94a3b8" }} />
-              ) : (
+              ) : stage === "phone" ? (
                 <Phone sx={{ ml: .8, color: "#94a3b8" }} />
+              ) : (
+                <Payments sx={{ ml: .8, color: "#94a3b8" }} />
               )}
 
               <TextField
@@ -1158,7 +1185,9 @@ export default function CustomerRegister() {
                 placeholder={
                   stage === "name"
                     ? "Type your full name..."
-                    : "Type your 10-digit mobile number..."
+                    : stage === "phone"
+                      ? "Type your 10-digit mobile number..."
+                      : "Type your UTR / transaction ID..."
                 }
                 type={stage === "email" ? "email" : "text"}
                 sx={{
