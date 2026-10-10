@@ -6,6 +6,7 @@ const path = require("path");
 const crypto = require("crypto");
 const XLSX = require("xlsx");
 const { createClient } = require("@supabase/supabase-js");
+const { getNextMemberId, sortMembersById } = require("./member-ids.cjs");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -521,7 +522,7 @@ async function readMembers() {
 
   if (error) throw error;
 
-  return (data || []).map(dbToMember);
+  return sortMembersById((data || []).map(dbToMember));
 }
 
 /* =========================================================
@@ -558,38 +559,6 @@ async function writeMembers(members) {
 /* =========================================================
    NEXT MEMBER ID
 ========================================================= */
-
-function getNextMemberId(members, requests = []) {
-  /*
-    Permanent sequential member IDs.
-
-    Existing members:
-      1, 2, 3, ... 382
-
-    New members:
-      383, 384, 385, ...
-
-    Existing IDs are NEVER reused.
-  */
-
-  let maxId = 0;
-
-  for (const member of members) {
-    const id = String(
-      member.id || member.memberId || ""
-    ).trim();
-
-    if (/^\d+$/.test(id)) {
-      const number = Number(id);
-
-      if (Number.isFinite(number) && number > maxId) {
-        maxId = number;
-      }
-    }
-  }
-
-  return String(maxId + 1);
-}
 
 /* =========================================================
    EXPIRED MEMBER ARCHIVE + AUTOMATIC ID REUSE
@@ -1114,6 +1083,13 @@ app.post(
 
           id,
 
+          // The fingerprint device uses the same sequential identifier as
+          // the membership record. Do not accept a client-provided value.
+          memberId: id,
+          customerId: id,
+          gymId: id,
+          fingerprintId: id,
+
           status:
             incoming.status ||
             "Active",
@@ -1466,8 +1442,10 @@ app.post(
         newExpiry.toISOString().split("T")[0];
       member.planFee = amount;
       member.feeReceived = amount;
+      member.paymentAmount = amount;
       member.paymentMethod = paymentMethod;
       member.paymentStatus = "Paid";
+      member.paymentCompleted = true;
       member.transactionId = transactionId || member.transactionId || "";
       member.paymentDate = paymentDate;
       member.status = "Active";

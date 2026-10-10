@@ -76,6 +76,8 @@ import {
 } from "@mui/icons-material";
 
 
+import { financialSummary, settledPayments } from "./financials";
+
 const drawerWidth = 240;
 
 const API_URL = "http://localhost:3001";
@@ -947,6 +949,11 @@ useEffect(() => {
             ? "Expired"
             : "Active",
       };
+    }).sort((left, right) => {
+      const leftId = Number(left.id || left.memberId);
+      const rightId = Number(right.id || right.memberId);
+      if (Number.isFinite(leftId) && Number.isFinite(rightId)) return leftId - rightId;
+      return String(left.id || "").localeCompare(String(right.id || ""));
     });
   }, [members, today]);
 
@@ -1291,8 +1298,9 @@ useEffect(() => {
     }
 
     const newMember = {
-      fingerprintId:
-        form.fingerprintId,
+      // The server assigns the same generated value to Member and
+      // Fingerprint IDs, so no manually entered device ID can collide.
+      fingerprintId: nextMemberId,
 
       name:
         form.name.trim(),
@@ -3295,16 +3303,11 @@ const planStats = [
               <TextField
                 fullWidth
                 label="Fingerprint ID"
-                placeholder="Example: 1025"
                 value={
-                  form.fingerprintId
+                  nextMemberId
                 }
-                onChange={(e) =>
-                  updateForm(
-                    "fingerprintId",
-                    e.target.value
-                  )
-                }
+                helperText="Assigned automatically with the Member ID"
+                disabled
               />
             </Grid>
 
@@ -4680,11 +4683,11 @@ function Section({
 ========================================================= */
 
 function PaymentsPage({ members }) {
-  const records = [...members].sort((a,b) => String(b.paymentDate || "").localeCompare(String(a.paymentDate || "")));
+  const records = settledPayments(members);
   return (
     <Box>
       <Typography variant="h5" fontWeight="bold">Payments</Typography>
-      <Typography color="text.secondary" sx={{mt:.5,mb:3}}>All member payment records, including UTR / transaction IDs.</Typography>
+      <Typography color="text.secondary" sx={{mt:.5,mb:3}}>Settled member payments only, including UTR / transaction IDs. Pending payments are not counted as income.</Typography>
       <Card sx={{borderRadius:3}}>
         <CardContent>
           {records.length === 0 ? (
@@ -4698,7 +4701,7 @@ function PaymentsPage({ members }) {
                   <Typography variant="body2" color="text.secondary">Method: {member.paymentMethod || "—"} Â· UTR: {member.transactionId || "—"}</Typography>
                 </Box>
                 <Box sx={{textAlign:{xs:"left",md:"right"}}}>
-                  <Typography fontWeight={950}>${String.fromCharCode(0x20B9)}{Number(member.feeReceived || member.planFee || 0).toLocaleString("en-IN")}</Typography>
+                  <Typography fontWeight={950}>${String.fromCharCode(0x20B9)}{member.receivedAmount.toLocaleString("en-IN")}</Typography>
                   <Chip size="small" label={member.paymentStatus || "Pending"} color={member.paymentStatus === "Paid" ? "success" : "warning"} sx={{mt:.5}}/>
                 </Box>
               </Stack>
@@ -4713,7 +4716,6 @@ function PaymentsPage({ members }) {
 function FinancialAnalysis({ members }) {
   const now = new Date();
 
-  const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
 
   const monthName = now.toLocaleString(
@@ -4723,37 +4725,7 @@ function FinancialAnalysis({ members }) {
     }
   );
 
-  const monthlyPayments = members.filter(
-    (member) => {
-      if (!member.paymentDate) {
-        return false;
-      }
-
-      const paymentDate = new Date(
-        `${member.paymentDate}T00:00:00`
-      );
-
-      return (
-        paymentDate.getMonth() ===
-          currentMonth &&
-        paymentDate.getFullYear() ===
-          currentYear
-      );
-    }
-  );
-
-  const monthlyIncoming =
-    monthlyPayments.reduce(
-      (total, member) => {
-        return (
-          total +
-          (Number(
-            member.feeReceived
-          ) || 0)
-        );
-      },
-      0
-    );
+  const { monthlyPayments, monthlyIncoming, totalReceived, outstanding } = financialSummary(members, now);
 
   return (
     <Box>
@@ -4922,6 +4894,21 @@ function FinancialAnalysis({ members }) {
 
       </Grid>
 
+      <Grid container spacing={3} sx={{ mt: 0 }}>
+        <Grid item xs={12} md={6}>
+          <Card sx={{ borderRadius: 3 }}><CardContent>
+            <Typography color="text.secondary" variant="body2">Total Settled Income</Typography>
+            <Typography variant="h4" fontWeight="bold" sx={{ mt: 1 }}>${String.fromCharCode(0x20B9)}{totalReceived.toLocaleString("en-IN")}</Typography>
+          </CardContent></Card>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Card sx={{ borderRadius: 3 }}><CardContent>
+            <Typography color="text.secondary" variant="body2">Outstanding Balance</Typography>
+            <Typography variant="h4" fontWeight="bold" sx={{ mt: 1 }}>${String.fromCharCode(0x20B9)}{outstanding.toLocaleString("en-IN")}</Typography>
+          </CardContent></Card>
+        </Grid>
+      </Grid>
+
       {/* PAYMENT LIST */}
 
       <Card
@@ -5038,9 +5025,7 @@ function FinancialAnalysis({ members }) {
                     >
                       ${String.fromCharCode(0x20B9)}
                       {(
-                        Number(
-                          member.feeReceived
-                        ) || 0
+                        member.receivedAmount
                       ).toLocaleString(
                         "en-IN"
                       )}
