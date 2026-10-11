@@ -80,7 +80,7 @@ import { financialSummary, settledPayments } from "./financials";
 
 const drawerWidth = 240;
 
-const API_URL = "http://localhost:3001";
+const API_URL = (import.meta.env.VITE_API_URL || "https://kevenyrsvp.in").replace(/\/$/, "");
 const PLAN_FEES = { Monthly: 1700, Quarterly: 4500, "Half Year": 8000, Yearly: 13999 };
 const getPlanFee = (plan) => PLAN_FEES[plan] || 0;
 
@@ -5221,7 +5221,6 @@ function RegistrationApprovals({
 }
 
 export default App;   
-
 
 
 
