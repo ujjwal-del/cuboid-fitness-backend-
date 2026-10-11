@@ -718,6 +718,15 @@ function GymDashboard({ onLogout }) {
   }
 
   async function approveRegistrationRequest(request) {
+    const confirmed = window.confirm(
+      `Confirm payment has been received and activate this membership?\n\n` +
+      `Name: ${request.name}\n` +
+      `Amount due: ₹${Number(request.paymentAmount || 0).toLocaleString("en-IN")}\n\n` +
+      `For desk payments, collect the amount before confirming.`
+    );
+
+    if (!confirmed) return;
+
     try {
       const requestId = request.requestId;
 
@@ -750,7 +759,7 @@ function GymDashboard({ onLogout }) {
       await loadExpiredMembers();
       await loadNextMemberId();
 
-      alert(`${request.name} approved successfully.`);
+      alert(`Payment confirmed and ${request.name}'s membership activated.`);
     } catch (error) {
       console.error("APPROVE REGISTRATION ERROR:", error);
       alert(`Could not approve registration.\n\n${error.message}`);
@@ -5184,10 +5193,15 @@ function RegistrationApprovals({
 
                       <Box sx={{mt:1}}>
                         <Typography color="text.secondary">Membership / Gym / Fingerprint ID: {request.memberId || request.fingerprintId || "—"}</Typography>
-                        <Typography color="text.secondary" sx={{fontWeight:800}}>Payment: ${String.fromCharCode(0x20B9)}{Number(request.paymentAmount || 0).toLocaleString("en-IN")} Â· {request.paymentStatus || "Submitted"}</Typography>
+                        <Typography color="text.secondary" sx={{fontWeight:800}}>Payment: ₹{Number(request.paymentAmount || 0).toLocaleString("en-IN")} · {request.paymentStatus || "Pay at desk"}</Typography>
                         <Typography color="text.secondary" sx={{fontWeight:800}}>
-  UTR / Transaction ID: {request.transactionId || request.utr || request.paymentTransactionId || "NOT STORED"}
-</Typography>
+                          Payment status: {request.paymentStatus || "Pay at desk"}
+                        </Typography>
+                        <Typography color="text.secondary">
+                          {request.paymentStatus === "Pay at desk"
+                            ? "Collect payment at the desk before confirming approval."
+                            : "Verify the submitted payment before confirming approval."}
+                        </Typography>
                       </Box>
 
                       <Chip
@@ -5211,7 +5225,7 @@ function RegistrationApprovals({
                           onApprove(request)
                         }
                       >
-                        Approve
+                        Confirm payment &amp; activate
                       </Button>
 
                       <Button
@@ -5237,6 +5251,4 @@ function RegistrationApprovals({
 }
 
 export default App;   
-
-
 

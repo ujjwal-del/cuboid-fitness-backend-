@@ -1557,16 +1557,14 @@ app.post(
           incoming.photo || ""
         ).trim();
 
-      const transactionId = String(incoming.transactionId || incoming.utr || incoming.paymentTransactionId || "").trim().replace(/\s+/g, "");
       const paymentAmount = getPlanFee(plan);
       /*
         No permanent Membership/Gym/Fingerprint ID is accepted from
         the public registration form. The ID is assigned only when
         an admin approves the request.
       */
-      const paymentStatus = "Submitted";
-      const paymentMethod = "UPI";
-      const paymentDate = String(incoming.paymentDate || "").trim();
+      const paymentStatus = "Pay at desk";
+      const paymentMethod = "At desk";
 
       /* -----------------------------------------
          BASIC VALIDATION
@@ -1614,10 +1612,6 @@ app.post(
 
       // Permanent member ID is assigned on approval.
 
-      if (transactionId.length < 6 || transactionId.length > 50) {
-        return res.status(400).json({ success: false, error: "Valid UTR / Transaction ID is required after payment." });
-      }
-
       /* -----------------------------------------
          CHECK EXISTING MEMBERS
       ----------------------------------------- */
@@ -1651,14 +1645,6 @@ app.post(
 
       const requests =
         await readRegistrationRequests();
-      const existingTransaction = requests.find((request) => String(request.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
-      const memberTransaction = members.find((member) => String(member.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
-      if (existingTransaction || memberTransaction) {
-        return res.status(409).json({ success: false, error: "This UTR / Transaction ID has already been submitted." });
-      }
-
-
-
       /* -----------------------------------------
          CHECK DUPLICATE PENDING REQUEST
       ----------------------------------------- */
@@ -1727,11 +1713,11 @@ app.post(
           photo,
 
           paymentCompleted: false,
-          paymentStatus: "Submitted",
-          paymentMethod: "UPI",
+          paymentStatus,
+          paymentMethod,
           paymentAmount,
-          transactionId,
-          paymentDate: paymentDate || joiningDate,
+          transactionId: "",
+          paymentDate: "",
 
           status:
             "Pending",
@@ -1818,22 +1804,9 @@ app.post(
       const incoming =
         req.body || {};
 
-      const customerId =
-        String(
-          incoming.customerId || ""
-        ).trim();
-
-      const fingerprintId =
-        String(
-          incoming.fingerprintId || ""
-        ).trim();
-
-      const memberId = "";
-      const gymId = "";
-      const paymentCompleted = incoming.paymentCompleted === true || String(incoming.paymentCompleted || "").toLowerCase() === "yes";
-      const paymentStatus = "Submitted";
-      const paymentMethod = "UPI";
-      const paymentDate = String(incoming.paymentDate || "").trim();
+      const paymentCompleted = false;
+      const paymentStatus = "Pay at desk";
+      const paymentMethod = "At desk";
 
       const name =
         String(
@@ -1852,8 +1825,6 @@ app.post(
         ).trim();
 
       const paymentAmount = getPlanFee(plan);
-      const transactionId = String(incoming.transactionId || incoming.utr || incoming.paymentTransactionId || "").trim().replace(/\s+/g, "");
-
       const photo =
         String(
           incoming.photo || ""
@@ -1879,10 +1850,6 @@ app.post(
 
       // Permanent ID is assigned only after admin approval.
 
-      if (transactionId.length < 6 || transactionId.length > 50) {
-        return res.status(400).json({ success: false, error: "Valid UTR / Transaction ID is required after payment." });
-      }
-
       const members =
         await readMembers();
 
@@ -1906,14 +1873,6 @@ app.post(
 
       const requests =
         await readRegistrationRequests();
-      const existingTransaction = requests.find((request) => String(request.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
-      const memberTransaction = members.find((member) => String(member.transactionId || "").trim().toLowerCase() === transactionId.toLowerCase());
-      if (existingTransaction || memberTransaction) {
-        return res.status(409).json({ success: false, error: "This UTR / Transaction ID has already been submitted." });
-      }
-
-
-
       const existingRequest =
         requests.find(
           (request) =>
@@ -1965,12 +1924,12 @@ app.post(
 
           photo,
 
-          paymentCompleted: true,
+          paymentCompleted,
           paymentStatus,
           paymentMethod,
           paymentAmount,
-          transactionId,
-          paymentDate: paymentDate || joiningDate,
+          transactionId: "",
+          paymentDate: "",
 
           status:
             "Pending",
@@ -2321,8 +2280,12 @@ app.post(
           transactionId:
             String(request.transactionId || request.utr || request.paymentTransactionId || "").trim(),
 
-          paymentDate:
-            request.paymentDate || request.joiningDate || "",
+          paymentDate: new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kolkata",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date()),
 
           status:
             "Active",
@@ -2367,7 +2330,7 @@ app.post(
         success: true,
 
         message:
-          "Registration approved successfully.",
+          "Desk payment confirmed and membership activated successfully.",
 
         member,
 
@@ -2653,4 +2616,3 @@ app.listen(
     console.log("");
   }
 );
-
