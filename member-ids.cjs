@@ -1,14 +1,42 @@
-function getNextMemberId(members = []) {
+function getNextMemberId(members = [], requests = []) {
   let maxId = 0;
 
-  for (const member of members) {
-    const id = String(member.id || member.memberId || "").trim();
+  const reserve = (value) => {
+    const id = String(value ?? "").trim();
     if (/^\d+$/.test(id)) {
       maxId = Math.max(maxId, Number(id));
     }
+  };
+
+  for (const member of members) {
+    reserve(member.id || member.memberId || member.member_id);
+  }
+
+  for (const request of requests) {
+    reserve(request.memberId || request.member_id);
   }
 
   return String(maxId + 1);
+}
+
+function getNextFingerprintId(members = [], requests = []) {
+  let maxId = 0;
+  const usedIds = new Set();
+
+  for (const record of [...members, ...requests]) {
+    const fingerprintId = String(
+      record.fingerprintId ?? record.fingerprint_id ?? ""
+    ).trim();
+    if (!fingerprintId) continue;
+    usedIds.add(fingerprintId.toLowerCase());
+    if (/^\d+$/.test(fingerprintId)) {
+      maxId = Math.max(maxId, Number(fingerprintId));
+    }
+  }
+
+  let nextId = maxId + 1;
+  while (usedIds.has(String(nextId).toLowerCase())) nextId += 1;
+  return String(nextId);
 }
 
 function sortMembersById(members = []) {
@@ -24,4 +52,4 @@ function sortMembersById(members = []) {
   });
 }
 
-module.exports = { getNextMemberId, sortMembersById };
+module.exports = { getNextMemberId, getNextFingerprintId, sortMembersById };

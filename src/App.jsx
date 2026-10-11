@@ -135,6 +135,7 @@ function getExpiryDate(joiningDate, plan) {
   // Yearly = 12 months
   const planMonths = {
     Monthly: 1,
+    "2 Months": 2,
     Quarterly: 3,
     "Half Year": 6,
     Yearly: 12,
@@ -590,6 +591,9 @@ function GymDashboard({ onLogout }) {
   const [nextMemberId, setNextMemberId] =
     useState("GYM-00001");
 
+  const [nextFingerprintId, setNextFingerprintId] =
+    useState("");
+
   const [form, setForm] = useState({
     fingerprintId: "",
     name: "",
@@ -822,6 +826,7 @@ function GymDashboard({ onLogout }) {
       }
 
       setNextMemberId(data.id);
+      setNextFingerprintId(data.fingerprintId || data.id);
     } catch (error) {
       console.error(
         "NEXT ID ERROR:",
@@ -1298,9 +1303,7 @@ useEffect(() => {
     }
 
     const newMember = {
-      // The server assigns the same generated value to Member and
-      // Fingerprint IDs, so no manually entered device ID can collide.
-      fingerprintId: nextMemberId,
+      fingerprintId: nextFingerprintId,
 
       name:
         form.name.trim(),
@@ -1650,6 +1653,10 @@ useEffect(() => {
     return "Quarterly";
   }
 
+  if (p === "2 months" || p === "2 month") {
+    return "2 Months";
+  }
+
   if (
     p === "half year" ||
     p === "half-year" ||
@@ -1676,6 +1683,7 @@ useEffect(() => {
 
 const planStats = [
   "Monthly",
+  "2 Months",
   "Quarterly",
   "Half Year",
   "Yearly",
@@ -2813,6 +2821,10 @@ const planStats = [
                   Monthly
                 </MuiMenuItem>
 
+                <MuiMenuItem value="2 Months">
+                  2 Months
+                </MuiMenuItem>
+
                 <MuiMenuItem value="Quarterly">
                   Quarterly
                 </MuiMenuItem>
@@ -3007,7 +3019,7 @@ const planStats = [
             <Grid item xs={12} md={6}><TextField fullWidth label="Fingerprint ID" helperText="Must be unique; this can differ from the member ID." value={editMemberForm.fingerprintId} onChange={(e)=>updateEditMemberForm("fingerprintId",e.target.value)}/></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth label="Name" value={editMemberForm.name} onChange={(e)=>updateEditMemberForm("name",e.target.value)}/></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth label="Phone" value={editMemberForm.phone} onChange={(e)=>updateEditMemberForm("phone",e.target.value.replace(/\D/g,"").slice(0,10))}/></Grid>
-            <Grid item xs={12} md={6}><TextField select fullWidth label="Plan" value={editMemberForm.plan} onChange={(e)=>updateEditMemberForm("plan",e.target.value)}>{["Monthly","Quarterly","Half Year","Yearly"].map((v)=><MuiMenuItem key={v} value={v}>{v}</MuiMenuItem>)}</TextField></Grid>
+            <Grid item xs={12} md={6}><TextField select fullWidth label="Plan" value={editMemberForm.plan} onChange={(e)=>updateEditMemberForm("plan",e.target.value)}>{["Monthly","2 Months","Quarterly","Half Year","Yearly"].map((v)=><MuiMenuItem key={v} value={v}>{v}</MuiMenuItem>)}</TextField></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth type="date" label="Joining Date" InputLabelProps={{shrink:true}} value={editMemberForm.joiningDate} onChange={(e)=>updateEditMemberForm("joiningDate",e.target.value)}/></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth type="date" label="Expiry Date" InputLabelProps={{shrink:true}} value={editMemberForm.expiryDate} onChange={(e)=>updateEditMemberForm("expiryDate",e.target.value)}/></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth type="number" label="Plan Fee" value={editMemberForm.planFee} onChange={(e)=>updateEditMemberForm("planFee",e.target.value)}/></Grid>
@@ -3304,9 +3316,9 @@ const planStats = [
                 fullWidth
                 label="Fingerprint ID"
                 value={
-                  nextMemberId
+                  nextFingerprintId
                 }
-                helperText="Assigned automatically with the Member ID"
+                helperText="Assigned from the fingerprint ID sequence; admins can edit it later."
                 disabled
               />
             </Grid>
@@ -3388,6 +3400,10 @@ const planStats = [
               >
                 <MuiMenuItem value="Monthly">
                   Monthly
+                </MuiMenuItem>
+
+                <MuiMenuItem value="2 Months">
+                  2 Months
                 </MuiMenuItem>
 
                 <MuiMenuItem value="Quarterly">
@@ -5221,11 +5237,6 @@ function RegistrationApprovals({
 }
 
 export default App;   
-
-
-
-
-
 
 
 

@@ -6,7 +6,11 @@ const path = require("path");
 const crypto = require("crypto");
 const XLSX = require("xlsx");
 const { createClient } = require("@supabase/supabase-js");
-const { getNextMemberId, sortMembersById } = require("./member-ids.cjs");
+const {
+  getNextMemberId,
+  getNextFingerprintId,
+  sortMembersById,
+} = require("./member-ids.cjs");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -21,14 +25,14 @@ const supabase = createClient(
 );
 
 const app = express();
-const PORT = 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 /* =========================================================
    ADMIN LOGIN
 ========================================================= */
 
-const ADMIN_ID = "admin";
-const ADMIN_PASSWORD = "GymAdmin@2026";
+const ADMIN_ID = process.env.ADMIN_ID || "admin";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "GymAdmin@2026";
 
 /*
   Sessions are stored on the server.
@@ -50,10 +54,15 @@ app.use(
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
 
+      const configuredOrigins = (process.env.CORS_ORIGINS || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
       const allowed =
         /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
         origin === "https://cuboid-fitness-backend.vercel.app" ||
-        origin === "https://customer-bot-sigma.vercel.app";
+        origin === "https://customer-bot-sigma.vercel.app" ||
+        configuredOrigins.includes(origin);
 
       if (allowed) {
         return callback(null, true);  
@@ -85,6 +94,17 @@ app.use(
 /* =========================================================
    AUTH HELPERS
 ========================================================= */
+
+let memberWriteQueue = Promise.resolve();
+
+function withMemberWriteLock(operation) {
+  const result = memberWriteQueue.then(operation, operation);
+  memberWriteQueue = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
 
 function createSession() {
   const token =
@@ -655,6 +675,7 @@ function addCalendarMonths(dateInput, months) {
 */
 const PLAN_MONTHS = {
   Monthly: 1,
+  "2 Months": 2,
   Quarterly: 3,
   "Half Year": 6,
   Yearly: 12,
@@ -1025,10 +1046,16 @@ app.get(
           members,
           requests
         );
+      const fingerprintId =
+        getNextFingerprintId(
+          members,
+          requests
+        );
 
       res.json({
         success: true,
         id,
+        fingerprintId,
       });
     } catch (error) {
       console.error(
@@ -1053,7 +1080,8 @@ app.get(
 app.post(
   "/api/members",
   requireAuth,
-  async (req, res) => {
+  async (req, res) =>
+    withMemberWriteLock(async () => {
     try {
       await expireAndReleaseMemberIds();
 
@@ -1073,6 +1101,11 @@ app.post(
           members,
           requests
         );
+      const fingerprintId =
+        getNextFingerprintId(
+          members,
+          requests
+        );
 
       const incoming =
         req.body || {};
@@ -1083,12 +1116,10 @@ app.post(
 
           id,
 
-          // The fingerprint device uses the same sequential identifier as
-          // the membership record. Do not accept a client-provided value.
           memberId: id,
           customerId: id,
           gymId: id,
-          fingerprintId: id,
+          fingerprintId,
 
           status:
             incoming.status ||
@@ -1128,7 +1159,7 @@ app.post(
           error.message,
       });
     }
-  }
+    })
 );
 
 /* =========================================================
@@ -1382,6 +1413,7 @@ app.post(
 
       const planMonths = {
         Monthly: 1,
+        "2 Months": 2,
         Quarterly: 3,
         "Half Year": 6,
         Yearly: 12,
@@ -2084,7 +2116,8 @@ app.get(
 app.post(
   "/api/registration-requests/:id/approve",
   requireAuth,
-  async (req, res) => {
+  async (req, res) =>
+    withMemberWriteLock(async () => {
     try {
       const requestId =
         String(
@@ -2190,6 +2223,11 @@ app.post(
           refreshedMembers,
           requests
         );
+      const fingerprintId =
+        getNextFingerprintId(
+          refreshedMembers,
+          requests
+        );
 
       /* -----------------------------------------
          CREATE MEMBER
@@ -2209,7 +2247,7 @@ app.post(
             memberId,
 
           fingerprintId:
-            memberId,
+            fingerprintId,
 
           name:
             request.name,
@@ -2353,7 +2391,7 @@ app.post(
           "Failed to approve registration.",
       });
     }
-  }
+    })
 );
 
 /* =========================================================
@@ -2585,6 +2623,7 @@ scheduleDailyExcelExport();
 
 app.listen(
   PORT,
+  "0.0.0.0",
   () => {
     console.log("");
     console.log(
@@ -2614,12 +2653,4 @@ app.listen(
     console.log("");
   }
 );
-
-
-
-
-
-
-
-
 
