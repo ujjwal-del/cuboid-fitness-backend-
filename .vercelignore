@@ -1,0 +1,17 @@
+.env
+.env.*
+node_modules/
+dist/
+daily_exports/
+*.xlsx
+*.xls
+hostinger-backend/
+hostinger-backend.zip
+*report*.json
+server.BEFORE-FINAL-DATA.cjs
+server.backup.cjs
+server.excel-backup.cjs
+server.supabase-test.cjs
+src/App.BEFORE-FINAL-DATA.jsx
+src/App.jsx.*
+*.log
