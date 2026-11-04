@@ -24,7 +24,9 @@ import {
   ShieldOutlined,
 } from "@mui/icons-material";
 
-const API_URL = (import.meta.env.VITE_API_URL || "https://kevenyrsvp.in").replace(/\/$/, "");
+const API_URL = (
+  import.meta.env.VITE_API_URL ?? "https://cuboid-fitness-backend.onrender.com"
+).replace(/\/$/, "");
 
 const BOT_ANIMATIONS = `
   @keyframes botMessageIn {

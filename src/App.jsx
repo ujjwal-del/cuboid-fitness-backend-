@@ -80,9 +80,38 @@ import { financialSummary, settledPayments } from "./financials";
 
 const drawerWidth = 240;
 
-const API_URL = (import.meta.env.VITE_API_URL || "https://kevenyrsvp.in").replace(/\/$/, "");
-const PLAN_FEES = { Monthly: 1700, Quarterly: 4500, "Half Year": 8000, Yearly: 13999 };
+const API_URL = (
+  import.meta.env.VITE_API_URL ??
+  "https://cuboid-fitness-backend.onrender.com"
+).replace(/\/$/, "");
+const API_REQUEST_TIMEOUT_MS = 90_000;
+const PLAN_FEES = { Monthly: 1700, "2 Months": 2800, Quarterly: 4500, "Half Year": 7500, Yearly: 11000 };
 const getPlanFee = (plan) => PLAN_FEES[plan] || 0;
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    API_REQUEST_TIMEOUT_MS
+  );
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(
+        "The gym service took too long to respond. Please retry; the service may be starting.",
+        { cause: error }
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 /* =========================================================
    AUTH STORAGE
@@ -115,7 +144,7 @@ async function authFetch(url, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  return fetchWithTimeout(url, {
     ...options,
     headers,
   });
@@ -318,7 +347,7 @@ function LoginScreen({ onLogin }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/login`, {
+      const response = await fetchWithTimeout(`${API_URL}/api/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -892,37 +921,32 @@ function GymDashboard({ onLogout }) {
   ======================================================= */
 useEffect(() => {
   let mounted = true;
+  let refreshTimer;
+  let refreshing = false;
 
-  // Load only the essential data first.
-  loadMembers();
+  async function refreshDashboardData() {
+    if (!mounted || refreshing) return;
+    refreshing = true;
 
-  // Secondary data loads after the main member list.
-  const backgroundTimer = setTimeout(() => {
-    if (!mounted) return;
+    try {
+      await Promise.all([
+        loadMembers(),
+        loadRegistrationRequests(),
+        loadExpiredMembers(),
+      ]);
+    } finally {
+      refreshing = false;
+      if (mounted) {
+        refreshTimer = setTimeout(refreshDashboardData, 60 * 1000);
+      }
+    }
+  }
 
-    loadRegistrationRequests();
-    loadExpiredMembers();
-  }, 300);
-
-  // Refresh in the background every 60 seconds.
-  const refreshTimer = setInterval(() => {
-    if (!mounted) return;
-
-    loadMembers();
-
-    setTimeout(() => {
-      if (mounted) loadRegistrationRequests();
-    }, 500);
-
-    setTimeout(() => {
-      if (mounted) loadExpiredMembers();
-    }, 1000);
-  }, 60 * 1000);
+  refreshDashboardData();
 
   return () => {
     mounted = false;
-    clearTimeout(backgroundTimer);
-    clearInterval(refreshTimer);
+    clearTimeout(refreshTimer);
   };
 }, []);
   /* =======================================================
@@ -1272,8 +1296,8 @@ useEffect(() => {
       phone: "",
       plan: "Monthly",
       joiningDate: today,
-      planFee: "1000",
-      feeReceived: "1000",
+      planFee: "1700",
+      feeReceived: "1700",
       paymentMethod: "UPI",
       paymentStatus: "Paid",
       photo: "",
@@ -1620,9 +1644,10 @@ useEffect(() => {
   function handlePlanChange(plan) {
     const fees = {
       Monthly: "1700",
+      "2 Months": "2800",
       Quarterly: "4500",
-      "Half Year": "8000",
-      Yearly: "13999",
+      "Half Year": "7500",
+      Yearly: "11000",
     };
 
     setForm((current) => ({
@@ -2661,8 +2686,8 @@ const planStats = [
 
             <Box sx={{mt:1.5,p:1.7,borderRadius:2.5,bgcolor:"#0a0a0a",border:"1px solid #182235"}}>
               <Typography sx={{fontSize:9,color:"#64748b",letterSpacing:1.2,fontWeight:900}}>PAYMENT SNAPSHOT</Typography>
-              <Box sx={{display:"flex",justifyContent:"space-between",mt:1.2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Plan fee</Typography><Typography sx={{fontWeight:900}}>${String.fromCharCode(0x20B9)}{Number(selectedMember.planFee||0).toLocaleString("en-IN")}</Typography></Box>
-              <Box sx={{display:"flex",justifyContent:"space-between",mt:.8}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Received</Typography><Typography sx={{fontWeight:900,color:"#34d399"}}>${String.fromCharCode(0x20B9)}{Number(selectedMember.feeReceived||0).toLocaleString("en-IN")}</Typography></Box>
+              <Box sx={{display:"flex",justifyContent:"space-between",mt:1.2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Plan fee</Typography><Typography sx={{fontWeight:900}}>{String.fromCharCode(0x20B9)}{Number(selectedMember.planFee||0).toLocaleString("en-IN")}</Typography></Box>
+              <Box sx={{display:"flex",justifyContent:"space-between",mt:.8}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Received</Typography><Typography sx={{fontWeight:900,color:"#34d399"}}>{String.fromCharCode(0x20B9)}{Number(selectedMember.feeReceived||0).toLocaleString("en-IN")}</Typography></Box>
               <Box sx={{display:"flex",justifyContent:"space-between",mt:.8}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Method</Typography><Typography sx={{fontWeight:900}}>{selectedMember.paymentMethod || "—"}</Typography></Box>
                <Box sx={{display:"flex",justifyContent:"space-between",mt:.8,gap:2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Payment Status</Typography><Chip size="small" label={selectedMember.paymentStatus || "Pending"} color={selectedMember.paymentStatus === "Paid" ? "success" : "warning"} /></Box>
                <Box sx={{display:"flex",justifyContent:"space-between",mt:.8,gap:2}}><Typography sx={{fontSize:12,color:"#94a3b8"}}>Transaction ID</Typography><Typography sx={{fontWeight:900,fontSize:11,wordBreak:"break-all",textAlign:"right"}}>{selectedMember.transactionId || selectedMember.utr || selectedMember.paymentTransactionId || "NOT STORED"}</Typography></Box>
@@ -2813,9 +2838,10 @@ const planStats = [
 
                   const fees = {
                     Monthly: "1700",
+                    "2 Months": "2800",
                     Quarterly: "4500",
-                    "Half Year": "8000",
-                    Yearly: "13999",
+                    "Half Year": "7500",
+                    Yearly: "11000",
                   };
 
                   setRenewForm((current) => ({
@@ -2863,7 +2889,7 @@ const planStats = [
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      ${String.fromCharCode(0x20B9)}
+                      {String.fromCharCode(0x20B9)}
                     </InputAdornment>
                   ),
                 }}
@@ -3502,7 +3528,7 @@ const planStats = [
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      ${String.fromCharCode(0x20B9)}
+                      {String.fromCharCode(0x20B9)}
                     </InputAdornment>
                   ),
                 }}
@@ -3530,7 +3556,7 @@ const planStats = [
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
-                      ${String.fromCharCode(0x20B9)}
+                      {String.fromCharCode(0x20B9)}
                     </InputAdornment>
                   ),
                 }}
@@ -4726,7 +4752,7 @@ function PaymentsPage({ members }) {
                   <Typography variant="body2" color="text.secondary">Method: {member.paymentMethod || "—"} Â· UTR: {member.transactionId || "—"}</Typography>
                 </Box>
                 <Box sx={{textAlign:{xs:"left",md:"right"}}}>
-                  <Typography fontWeight={950}>${String.fromCharCode(0x20B9)}{member.receivedAmount.toLocaleString("en-IN")}</Typography>
+                  <Typography fontWeight={950}>{String.fromCharCode(0x20B9)}{member.receivedAmount.toLocaleString("en-IN")}</Typography>
                   <Chip size="small" label={member.paymentStatus || "Pending"} color={member.paymentStatus === "Paid" ? "success" : "warning"} sx={{mt:.5}}/>
                 </Box>
               </Stack>
@@ -4814,7 +4840,7 @@ function FinancialAnalysis({ members }) {
                       mt: 1,
                     }}
                   >
-                    ${String.fromCharCode(0x20B9)}
+                    {String.fromCharCode(0x20B9)}
                     {monthlyIncoming.toLocaleString(
                       "en-IN"
                     )}
@@ -4923,13 +4949,13 @@ function FinancialAnalysis({ members }) {
         <Grid item xs={12} md={6}>
           <Card sx={{ borderRadius: 3 }}><CardContent>
             <Typography color="text.secondary" variant="body2">Total Settled Income</Typography>
-            <Typography variant="h4" fontWeight="bold" sx={{ mt: 1 }}>${String.fromCharCode(0x20B9)}{totalReceived.toLocaleString("en-IN")}</Typography>
+            <Typography variant="h4" fontWeight="bold" sx={{ mt: 1 }}>{String.fromCharCode(0x20B9)}{totalReceived.toLocaleString("en-IN")}</Typography>
           </CardContent></Card>
         </Grid>
         <Grid item xs={12} md={6}>
           <Card sx={{ borderRadius: 3 }}><CardContent>
             <Typography color="text.secondary" variant="body2">Outstanding Balance</Typography>
-            <Typography variant="h4" fontWeight="bold" sx={{ mt: 1 }}>${String.fromCharCode(0x20B9)}{outstanding.toLocaleString("en-IN")}</Typography>
+            <Typography variant="h4" fontWeight="bold" sx={{ mt: 1 }}>{String.fromCharCode(0x20B9)}{outstanding.toLocaleString("en-IN")}</Typography>
           </CardContent></Card>
         </Grid>
       </Grid>
@@ -5048,7 +5074,7 @@ function FinancialAnalysis({ members }) {
                     <Typography
                       fontWeight="bold"
                     >
-                      ${String.fromCharCode(0x20B9)}
+                      {String.fromCharCode(0x20B9)}
                       {(
                         member.receivedAmount
                       ).toLocaleString(
@@ -5076,7 +5102,7 @@ function FinancialAnalysis({ members }) {
                   variant="h6"
                   fontWeight="bold"
                 >
-                  Total Incoming: ${String.fromCharCode(0x20B9)}
+                  Total Incoming: {String.fromCharCode(0x20B9)}
                   {monthlyIncoming.toLocaleString(
                     "en-IN"
                   )}
@@ -5251,4 +5277,3 @@ function RegistrationApprovals({
 }
 
 export default App;   
-
